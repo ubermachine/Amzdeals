@@ -91,6 +91,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 discountBadge = `<div class="discount-badge">${product.discount_percentage}% OFF</div>`;
             }
 
+            let verifiedBadge = '';
+            if (product.is_true_deal) {
+                verifiedBadge = `<div class="verified-badge">✓ Verified Deal</div>`;
+                card.classList.add('true-deal');
+            }
+
             // Rating display
             const ratingHtml = product.rating ? 
                 `<span class="star-icon">★</span> <span class="rating-text">${product.rating}</span>` : 
@@ -98,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             card.innerHTML = `
                 ${discountBadge}
+                ${verifiedBadge}
                 <div class="image-container">
                     <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
                 </div>
@@ -111,8 +118,43 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
                     <a href="${escapeHtml(product.url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
+                    ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}
+                    <div class="keepa-graph-container">
+                        <div class="keepa-loading">Loading graph...</div>
+                        <img alt="Price History Graph" class="keepa-img" style="display:none;" />
+                    </div>
                 </div>
             `;
+            
+            const keepaBtn = card.querySelector('.keepa-btn');
+            if (keepaBtn) {
+                keepaBtn.addEventListener('click', () => {
+                    const container = card.querySelector('.keepa-graph-container');
+                    const img = container.querySelector('.keepa-img');
+                    const loading = container.querySelector('.keepa-loading');
+                    
+                    if (container.classList.contains('active')) {
+                        container.classList.remove('active');
+                        keepaBtn.textContent = 'View Price History';
+                    } else {
+                        container.classList.add('active');
+                        keepaBtn.textContent = 'Hide Price History';
+                        
+                        if (!img.getAttribute('src')) {
+                            const asin = keepaBtn.getAttribute('data-asin');
+                            img.setAttribute('src', `https://graph.keepa.com/pricehistory?asin=${asin}&domain=11`);
+                            img.onload = () => {
+                                loading.style.display = 'none';
+                                img.style.display = 'block';
+                            };
+                            img.onerror = () => {
+                                loading.textContent = 'Failed to load graph';
+                                loading.style.color = '#ef233c'; // error color
+                            };
+                        }
+                    }
+                });
+            }
             
             productGrid.appendChild(card);
         });
