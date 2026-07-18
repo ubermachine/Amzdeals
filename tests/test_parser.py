@@ -1,4 +1,4 @@
-from scraper.parser import parse_search_results
+﻿from scraper.parser import parse_search_results
 
 SAMPLE_RESULT_HTML = """
 <div class="s-main-slot s-result-list">

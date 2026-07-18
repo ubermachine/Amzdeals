@@ -1,4 +1,4 @@
-"""Parse Amazon.in search result HTML into structured product data."""
+﻿"""Parse Amazon.in search result HTML into structured product data."""
 
 import re
 from bs4 import BeautifulSoup
