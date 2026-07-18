@@ -17,7 +17,7 @@ def test_api_search_missing_query(client):
 
 def test_api_search_valid(client, monkeypatch):
     # Mock the search_deals function to avoid hitting Amazon in tests
-    from scraper import engine
+    import main
     
     async def mock_search(*args, **kwargs):
         return {
@@ -28,7 +28,7 @@ def test_api_search_valid(client, monkeypatch):
             "cached": False
         }
         
-    monkeypatch.setattr(engine, "search_deals", mock_search)
+    monkeypatch.setattr(main, "search_deals", mock_search)
     
     response = client.get("/api/search?query=Perfume&min_discount=40&max_discount=90&page=1")
     assert response.status_code == 200
