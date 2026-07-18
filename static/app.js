@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            renderProducts(data.results);
+            renderProducts(data.products);
             
         } catch (error) {
             errorMessage.textContent = error.message;
@@ -82,13 +82,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `₹${price.toLocaleString('en-IN')}`;
             };
             
-            const currentPriceText = formatPrice(product.price);
+            const currentPriceText = formatPrice(product.current_price);
             const originalPriceText = product.original_price ? formatPrice(product.original_price) : '';
             
             // Calculate and display discount badge if available
             let discountBadge = '';
-            if (product.discount_percentage) {
-                discountBadge = `<div class="discount-badge">${product.discount_percentage}% OFF</div>`;
+            if (product.discount_pct) {
+                discountBadge = `<div class="discount-badge">${product.discount_pct}% OFF</div>`;
             }
 
             let verifiedBadge = '';
@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="current-price">${currentPriceText}</span>
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
-                    <a href="${escapeHtml(product.url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
+                    <a href="${escapeHtml(product.product_url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
                     ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}
                     <div class="keepa-graph-container">
                         <div class="keepa-loading">Loading graph...</div>
@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         if (!img.getAttribute('src')) {
                             const asin = keepaBtn.getAttribute('data-asin');
-                            img.setAttribute('src', `https://graph.keepa.com/pricehistory?asin=${asin}&domain=11`);
+                            img.setAttribute('src', `https://graph.keepa.com/pricehistory?asin=${asin}&domain=10&range=365`);
                             img.onload = () => {
                                 loading.style.display = 'none';
                                 img.style.display = 'block';
