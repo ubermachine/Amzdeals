@@ -55,9 +55,16 @@ async def _fetch_with_retry(url: str) -> str | None:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
 
-                # Check for CAPTCHA
+                # Check for CAPTCHA page (not just the word "robot" which
+                # appears in normal meta tags like <meta name="robots">)
                 text = response.text
-                if "captcha" in text.lower() or "robot" in text.lower():
+                is_captcha = (
+                    "captcha" in text.lower()
+                    and "Type the characters you see" in text
+                ) or (
+                    "/errors/validateCaptcha" in text
+                )
+                if is_captcha:
                     logger.warning(
                         "CAPTCHA detected on attempt %d/%d",
                         attempt + 1,
