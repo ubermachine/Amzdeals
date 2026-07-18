@@ -1,4 +1,4 @@
-﻿"""Parse Amazon.in search result HTML into structured product data."""
+"""Parse Amazon.in search result HTML into structured product data."""
 
 import re
 from bs4 import BeautifulSoup
@@ -8,12 +8,17 @@ def _parse_price(text: str | None) -> float | None:
     """Extract numeric price from text like '₹239' or '₹1,999.00'."""
     if not text:
         return None
-    # Remove ₹, commas, and whitespace
-    cleaned = re.sub(r"[₹,\s]", "", text.strip())
-    try:
-        return float(cleaned)
-    except (ValueError, TypeError):
-        return None
+    # match ₹ or Rs. followed by price, ignoring other text like duplicated prices
+    match = re.search(r"(?:₹|Rs\.?)\s*([0-9,]+(?:\.[0-9]{1,2})?)", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"([0-9,]+(?:\.[0-9]{1,2})?)", text)
+    if match:
+        cleaned = match.group(1).replace(",", "")
+        try:
+            return float(cleaned)
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 def _parse_rating(text: str | None) -> float | None:
@@ -92,7 +97,7 @@ def parse_search_results(html: str) -> list[dict]:
         # Original price (strikethrough)
         orig_tag = item.select_one(
             'span.a-price[data-a-strike="true"] .a-offscreen, '
-            "span.a-text-price .a-offscreen"
+            'span.a-text-price[data-a-strike="true"] .a-offscreen'
         )
         original_price = _parse_price(orig_tag.get_text() if orig_tag else None)
 
