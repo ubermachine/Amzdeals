@@ -1,6 +1,7 @@
 """Parse Amazon.in search result HTML into structured product data."""
 
 import re
+import statistics
 from bs4 import BeautifulSoup
 
 
@@ -156,5 +157,16 @@ def parse_search_results(html: str) -> list[dict]:
                 "coupon": coupon,
             }
         )
+
+    # Calculate median discount
+    valid_discounts = [p["discount_pct"] for p in products if p["discount_pct"] is not None]
+    median_discount = statistics.median(valid_discounts) if valid_discounts else 0
+
+    for p in products:
+        d = p["discount_pct"]
+        if d is not None and d >= 40 and d >= median_discount + 10:
+            p["is_true_deal"] = True
+        else:
+            p["is_true_deal"] = False
 
     return products
