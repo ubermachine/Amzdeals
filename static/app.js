@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.innerHTML = `
                 ${discountBadge}
                 <div class="image-container">
-                    <img src="${imgUrl}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
+                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
                 </div>
                 <div class="product-info">
                     <h3 class="product-title" title="${escapeHtml(product.title)}">${escapeHtml(product.title)}</h3>
@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="current-price">${currentPriceText}</span>
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
-                    <a href="${product.url}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
+                    <a href="${escapeHtml(product.url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
                 </div>
             `;
             
