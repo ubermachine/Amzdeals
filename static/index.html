@@ -1,1 +1,59 @@
-<html><body>Frontend coming soon</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Deal Finder</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="glass-header">
+            <h1><span class="accent">Amazon</span> Deal Finder</h1>
+            <p class="subtitle">Discover the best discounts across Amazon India</p>
+        </header>
+
+        <main>
+            <section class="search-section glass-panel">
+                <form id="search-form">
+                    <div class="input-group">
+                        <label for="query">Search Query</label>
+                        <input type="text" id="query" name="query" placeholder="e.g. Laptops" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="min_discount">Min Discount (%)</label>
+                        <input type="number" id="min_discount" name="min_discount" min="0" max="100" placeholder="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="max_discount">Max Discount (%)</label>
+                        <input type="number" id="max_discount" name="max_discount" min="0" max="100" placeholder="100">
+                    </div>
+                    <div class="button-container">
+                        <button type="submit" id="search-btn">Find Deals</button>
+                    </div>
+                </form>
+            </section>
+
+            <section id="results-section" class="hidden">
+                <div class="results-header">
+                    <h2>Found Deals</h2>
+                    <span id="cache-status" class="badge hidden"></span>
+                </div>
+                <div id="loading-spinner" class="spinner-container hidden">
+                    <div class="spinner"></div>
+                    <p>Scraping deals, this might take a moment...</p>
+                </div>
+                <div id="error-message" class="error hidden"></div>
+                <div id="product-grid" class="product-grid">
+                    <!-- Products will be injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
