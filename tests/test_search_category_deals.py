@@ -21,16 +21,6 @@ def test_category_cache_key_differs_by_node():
 
 
 MOCK_HTML = """
-<div data-component-type="s-search-result" data-asin="B001">
-  <h2><a class="a-link-normal" href="/dp/B001">
-    <span class="a-text-normal">Test Product 1</span>
-  </a></h2>
-  <span class="a-price" data-a-color="base"><span class="a-offscreen">₹499</span></span>
-  <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹1,999</span></span>
-  <span class="a-icon-alt">4.2 out of 5 stars</span>
-  <span class="a-size-base">1,543</span>
-  <img class="s-image" src="https://img.example.com/1.jpg">
-</div>
 <div data-component-type="s-search-result" data-asin="B002">
   <h2><a class="a-link-normal" href="/dp/B002">
     <span class="a-text-normal">Test Product 2</span>
@@ -40,6 +30,16 @@ MOCK_HTML = """
   <span class="a-icon-alt">3.8 out of 5 stars</span>
   <span class="a-size-base">500</span>
   <img class="s-image" src="https://img.example.com/2.jpg">
+</div>
+<div data-component-type="s-search-result" data-asin="B001">
+  <h2><a class="a-link-normal" href="/dp/B001">
+    <span class="a-text-normal">Test Product 1</span>
+  </a></h2>
+  <span class="a-price" data-a-color="base"><span class="a-offscreen">₹499</span></span>
+  <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹1,999</span></span>
+  <span class="a-icon-alt">4.2 out of 5 stars</span>
+  <span class="a-size-base">1,543</span>
+  <img class="s-image" src="https://img.example.com/1.jpg">
 </div>
 """
 
@@ -119,3 +119,30 @@ async def test_search_category_deals_uses_cache():
 
     assert result["cached"] is True
     assert result["products"][0]["asin"] == "B001"
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_all_fetches_fail_no_cache():
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = None
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    assert "error" in result
+    assert result["error"] == "Failed to fetch results from Amazon. Please try again later."
+    assert result["products"] == []
+    assert result["total_results"] == 0
+    assert result["cached"] is False
+    mock_cache.set.assert_not_called()
+

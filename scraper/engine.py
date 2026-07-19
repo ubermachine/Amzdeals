@@ -124,6 +124,7 @@ async def search_category_deals(
     # Fetch multiple pages
     all_products = []
     seen_asins = set()
+    any_success = False
 
     for page_num in range(1, config.TOP_DEALS_PAGES + 1):
         # Throttle between pages
@@ -140,12 +141,23 @@ async def search_category_deals(
             )
             continue
 
+        any_success = True
         products = parse_search_results(html)
         for p in products:
             asin = p.get("asin")
             if asin and asin not in seen_asins:
                 seen_asins.add(asin)
                 all_products.append(p)
+
+    if not any_success:
+        return {
+            "category": category_name,
+            "node": node,
+            "products": [],
+            "total_results": 0,
+            "cached": False,
+            "error": "Failed to fetch results from Amazon. Please try again later.",
+        }
 
     # Score and rank
     for p in all_products:
