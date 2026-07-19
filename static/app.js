@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAbortController.abort();
         }
         currentAbortController = new AbortController();
+        const controller = currentAbortController;
 
         // Show skeleton, hide grid and error
         topDealsSkeleton.classList.remove('hidden');
@@ -96,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
         topDealsError.classList.add('hidden');
 
         // Mark pill as loading
+        document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('loading'));
         const activePill = document.querySelector(`.category-pill[data-node="${node}"]`);
         if (activePill) activePill.classList.add('loading');
 
@@ -124,8 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 topDealsError.classList.remove('hidden');
             }
         } finally {
-            topDealsSkeleton.classList.add('hidden');
-            if (activePill) activePill.classList.remove('loading');
+            if (currentAbortController === controller) {
+                topDealsSkeleton.classList.add('hidden');
+                if (activePill) activePill.classList.remove('loading');
+            }
         }
     }
 
