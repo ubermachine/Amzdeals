@@ -14,6 +14,13 @@ def make_cache_key(query: str, min_discount: int, max_discount: int, page: int) 
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def make_category_cache_key(node: str, min_discount: int, max_discount: int) -> str:
+    """Generate a deterministic SHA256 cache key for category deals."""
+    raw = f"top-deals:{node}:{min_discount}:{max_discount}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+
 class SearchCache:
     """Async SQLite cache for Amazon search results."""
 

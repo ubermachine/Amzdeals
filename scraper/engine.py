@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 import httpx
 
 import config
-from cache.sqlite_cache import SearchCache, make_cache_key
+from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
 from scraper.parser import parse_search_results
 from scraper.stealth import get_stealth_headers
 
@@ -89,6 +89,83 @@ def compute_deal_score(product: dict) -> int:
 
     score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
     return round(score)
+
+
+async def search_category_deals(
+    node: str,
+    category_name: str,
+    min_discount: int,
+    max_discount: int,
+    cache: SearchCache,
+) -> dict:
+    """Fetch top deals for a category by browse-node, score, and rank.
+
+    Fetches up to TOP_DEALS_PAGES pages, deduplicates by ASIN,
+    computes deal scores, and returns the top TOP_DEALS_LIMIT products.
+
+    Args:
+        node: Amazon browse-node ID.
+        category_name: Human-readable category name.
+        min_discount: Minimum discount percentage.
+        max_discount: Maximum discount percentage.
+        cache: SearchCache instance.
+
+    Returns:
+        Dict with keys: category, node, products, total_results, cached.
+    """
+    cache_key = make_category_cache_key(node, min_discount, max_discount)
+
+    # Check cache first
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        cached["cached"] = True
+        return cached
+
+    # Fetch multiple pages
+    all_products = []
+    seen_asins = set()
+
+    for page_num in range(1, config.TOP_DEALS_PAGES + 1):
+        # Throttle between pages
+        delay = random.uniform(config.THROTTLE_MIN, config.THROTTLE_MAX)
+        await asyncio.sleep(delay)
+
+        url = build_category_url(node, min_discount, max_discount, page_num)
+        html = await _fetch_with_retry(url)
+
+        if html is None:
+            logger.warning(
+                "Failed to fetch page %d for category %s (node %s)",
+                page_num, category_name, node,
+            )
+            continue
+
+        products = parse_search_results(html)
+        for p in products:
+            asin = p.get("asin")
+            if asin and asin not in seen_asins:
+                seen_asins.add(asin)
+                all_products.append(p)
+
+    # Score and rank
+    for p in all_products:
+        p["deal_score"] = compute_deal_score(p)
+
+    all_products.sort(key=lambda p: p["deal_score"], reverse=True)
+    top_products = all_products[: config.TOP_DEALS_LIMIT]
+
+    result = {
+        "category": category_name,
+        "node": node,
+        "products": top_products,
+        "total_results": len(top_products),
+        "cached": False,
+    }
+
+    # Store in cache
+    await cache.set(cache_key, result)
+
+    return result
 
 
 async def _fetch_with_retry(url: str) -> str | None:
