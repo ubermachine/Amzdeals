@@ -29,8 +29,9 @@ USER_AGENTS = [
 
 
 def get_stealth_headers() -> dict[str, str]:
-    """Generate realistic browser headers. User-Agent is handled by curl_cffi."""
+    """Generate realistic browser headers including a rotated User-Agent."""
     return {
+        "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7,hi;q=0.6",
         "Accept-Encoding": "gzip, deflate, br",
