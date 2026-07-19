@@ -39,3 +39,6 @@ CATEGORIES = [
 # Top Deals
 TOP_DEALS_PAGES = 3       # pages to scrape per category
 TOP_DEALS_LIMIT = 50      # max products per category
+
+# Safety
+MAX_CONCURRENT_SCRAPES = 1  # max concurrent HTTP requests to Amazon

@@ -76,17 +76,18 @@ async def test_search_deals_fetches_on_cache_miss():
     mock_response.text = fake_html
     mock_response.raise_for_status = MagicMock()
 
-    with patch("scraper.engine.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client_cls.return_value = mock_client
-        
-        # Patch sleep to make tests fast
+    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session:
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_get_session.return_value = mock_session
+
+        # Patch sleep (throttle delay) and semaphore to make tests fast
         with patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
-            result = await search_deals("Test", 40, 90, 1, cache)
-            
+            with patch("scraper.engine._scrape_semaphore", new_callable=AsyncMock) as mock_sem:
+                mock_sem.__aenter__ = AsyncMock(return_value=None)
+                mock_sem.__aexit__ = AsyncMock(return_value=None)
+                result = await search_deals("Test", 40, 90, 1, cache)
+
         assert result["cached"] is False
         assert len(result["products"]) >= 1
         assert result["products"][0]["asin"] == "FRESH001"

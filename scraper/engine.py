@@ -1,11 +1,20 @@
-"""Scraper engine: orchestrates URL construction, HTTP fetching, parsing, and caching."""
+"""Scraper engine: orchestrates URL construction, HTTP fetching, parsing, and caching.
+
+Safety features:
+  - curl_cffi with Chrome TLS impersonation (no httpx)
+  - Reusable AsyncSession for cookie persistence & connection reuse
+  - asyncio.Semaphore(1) concurrency guard — only one Amazon request at a time
+  - Stealth headers with Referer + Sec-Fetch (realistic browser footprint)
+  - Exponential backoff + CAPTCHA detection
+  - SQLite cache with 30-minute TTL
+"""
 
 import asyncio
 import logging
 import random
 from urllib.parse import urlencode
 
-import httpx
+from curl_cffi import requests
 
 import config
 from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
@@ -13,6 +22,31 @@ from scraper.parser import parse_search_results
 from scraper.stealth import get_stealth_headers
 
 logger = logging.getLogger(__name__)
+
+# ─── Concurrency guard ───────────────────────────────────────────────
+# Only one HTTP request to Amazon at a time, regardless of concurrent API users.
+_scrape_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_SCRAPES)
+
+# ─── Reusable HTTPS session ──────────────────────────────────────────
+# Persistent across requests for cookie jar continuity and TLS session reuse.
+_session: requests.AsyncSession | None = None
+_session_lock = asyncio.Lock()
+
+
+async def _get_session() -> requests.AsyncSession:
+    """Get or create the shared curl_cffi AsyncSession (Chrome impersonation)."""
+    global _session
+    if _session is None:
+        async with _session_lock:
+            if _session is None:
+                _session = requests.AsyncSession(
+                    impersonate="chrome",
+                    timeout=config.REQUEST_TIMEOUT,
+                )
+    return _session
+
+
+# ─── URL builders ────────────────────────────────────────────────────
 
 
 def build_search_url(
@@ -61,6 +95,9 @@ def build_category_url(
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
 
 
+# ─── Deal scoring ────────────────────────────────────────────────────
+
+
 def compute_deal_score(product: dict) -> int:
     """Compute a 0–100 deal quality score for a product.
 
@@ -89,6 +126,9 @@ def compute_deal_score(product: dict) -> int:
 
     score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
     return round(score)
+
+
+# ─── Category deals (multi-page) ─────────────────────────────────────
 
 
 async def search_category_deals(
@@ -180,25 +220,32 @@ async def search_category_deals(
     return result
 
 
+# ─── HTTP fetch with retry ───────────────────────────────────────────
+
+
 async def _fetch_with_retry(url: str) -> str | None:
-    """Fetch a URL with stealth headers, retries, and exponential backoff.
+    """Fetch a URL using curl_cffi with Chrome TLS impersonation.
+
+    Concurrency is serialized via _scrape_semaphore — only one request
+    to Amazon at a time.  Retries with exponential backoff and detects
+    CAPTCHA pages.
+
+    Args:
+        url: The full Amazon URL to fetch.
 
     Returns:
         HTML string on success, None on failure after all retries.
     """
-    for attempt in range(config.MAX_RETRIES):
-        headers = get_stealth_headers()
-        try:
-            async with httpx.AsyncClient(
-                http2=True,
-                timeout=config.REQUEST_TIMEOUT,
-                follow_redirects=True,
-            ) as client:
-                response = await client.get(url, headers=headers)
+    async with _scrape_semaphore:
+        session = await _get_session()
+
+        for attempt in range(config.MAX_RETRIES):
+            headers = get_stealth_headers()
+            try:
+                response = await session.get(url, headers=headers)
                 response.raise_for_status()
 
-                # Check for CAPTCHA page (not just the word "robot" which
-                # appears in normal meta tags like <meta name="robots">)
+                # Check for CAPTCHA page
                 text = response.text
                 is_captcha = (
                     "captcha" in text.lower()
@@ -220,20 +267,23 @@ async def _fetch_with_retry(url: str) -> str | None:
 
                 return text
 
-        except (httpx.HTTPStatusError, httpx.RequestError) as e:
-            logger.warning(
-                "Request failed on attempt %d/%d: %s",
-                attempt + 1,
-                config.MAX_RETRIES,
-                str(e),
-            )
-            if attempt < config.MAX_RETRIES - 1:
-                wait = config.BACKOFF_BASE ** (attempt + 1)
-                await asyncio.sleep(wait)
-            else:
-                return None
+            except requests.exceptions.RequestException as e:
+                logger.warning(
+                    "Request failed on attempt %d/%d: %s",
+                    attempt + 1,
+                    config.MAX_RETRIES,
+                    str(e),
+                )
+                if attempt < config.MAX_RETRIES - 1:
+                    wait = config.BACKOFF_BASE ** (attempt + 1)
+                    await asyncio.sleep(wait)
+                else:
+                    return None
 
     return None
+
+
+# ─── Search deals (single page) ──────────────────────────────────────
 
 
 async def search_deals(
