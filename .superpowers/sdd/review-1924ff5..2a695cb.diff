@@ -1,0 +1,296 @@
+# Review package: 1924ff5..2a695cb
+
+## Commits
+2a695cb feat: add search_category_deals aggregator with dedup and scoring
+
+## Files changed
+ cache/sqlite_cache.py               |   7 +++
+ scraper/engine.py                   |  79 ++++++++++++++++++++++-
+ tests/test_search_category_deals.py | 121 ++++++++++++++++++++++++++++++++++++
+ 3 files changed, 206 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/cache/sqlite_cache.py b/cache/sqlite_cache.py
+index 8c83b73..867800f 100644
+--- a/cache/sqlite_cache.py
++++ b/cache/sqlite_cache.py
+@@ -7,20 +7,27 @@ import aiosqlite
+ 
+ import config
+ 
+ 
+ def make_cache_key(query: str, min_discount: int, max_discount: int, page: int) -> str:
+     """Generate a deterministic SHA256 cache key from search parameters."""
+     raw = f"{query.lower().strip()}:{min_discount}:{max_discount}:{page}"
+     return hashlib.sha256(raw.encode()).hexdigest()
+ 
+ 
++def make_category_cache_key(node: str, min_discount: int, max_discount: int) -> str:
++    """Generate a deterministic SHA256 cache key for category deals."""
++    raw = f"top-deals:{node}:{min_discount}:{max_discount}"
++    return hashlib.sha256(raw.encode()).hexdigest()
++
++
++
+ class SearchCache:
+     """Async SQLite cache for Amazon search results."""
+ 
+     def __init__(self, db_path: str | None = None):
+         self._db_path = db_path or config.CACHE_DB_PATH
+         self._db: aiosqlite.Connection | None = None
+ 
+     async def init(self) -> None:
+         """Create the cache table if it doesn't exist."""
+         self._db = await aiosqlite.connect(self._db_path)
+diff --git a/scraper/engine.py b/scraper/engine.py
+index bd170a2..5340dd6 100644
+--- a/scraper/engine.py
++++ b/scraper/engine.py
+@@ -1,21 +1,21 @@
+ """Scraper engine: orchestrates URL construction, HTTP fetching, parsing, and caching."""
+ 
+ import asyncio
+ import logging
+ import random
+ from urllib.parse import urlencode
+ 
+ import httpx
+ 
+ import config
+-from cache.sqlite_cache import SearchCache, make_cache_key
++from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
+ from scraper.parser import parse_search_results
+ from scraper.stealth import get_stealth_headers
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
+ def build_search_url(
+     query: str, min_discount: int, max_discount: int, page: int
+ ) -> str:
+     """Construct an Amazon.in search URL with discount filters.
+@@ -84,20 +84,97 @@ def compute_deal_score(product: dict) -> int:
+     rating = product.get("rating") or 0.0
+     reviews = product.get("review_count") or 0
+ 
+     norm_rating = (rating / 5.0) * 100
+     norm_reviews = (min(reviews, 5000) / 5000) * 100
+ 
+     score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
+     return round(score)
+ 
+ 
++async def search_category_deals(
++    node: str,
++    category_name: str,
++    min_discount: int,
++    max_discount: int,
++    cache: SearchCache,
++) -> dict:
++    """Fetch top deals for a category by browse-node, score, and rank.
++
++    Fetches up to TOP_DEALS_PAGES pages, deduplicates by ASIN,
++    computes deal scores, and returns the top TOP_DEALS_LIMIT products.
++
++    Args:
++        node: Amazon browse-node ID.
++        category_name: Human-readable category name.
++        min_discount: Minimum discount percentage.
++        max_discount: Maximum discount percentage.
++        cache: SearchCache instance.
++
++    Returns:
++        Dict with keys: category, node, products, total_results, cached.
++    """
++    cache_key = make_category_cache_key(node, min_discount, max_discount)
++
++    # Check cache first
++    cached = await cache.get(cache_key)
++    if cached is not None:
++        cached["cached"] = True
++        return cached
++
++    # Fetch multiple pages
++    all_products = []
++    seen_asins = set()
++
++    for page_num in range(1, config.TOP_DEALS_PAGES + 1):
++        # Throttle between pages
++        delay = random.uniform(config.THROTTLE_MIN, config.THROTTLE_MAX)
++        await asyncio.sleep(delay)
++
++        url = build_category_url(node, min_discount, max_discount, page_num)
++        html = await _fetch_with_retry(url)
++
++        if html is None:
++            logger.warning(
++                "Failed to fetch page %d for category %s (node %s)",
++                page_num, category_name, node,
++            )
++            continue
++
++        products = parse_search_results(html)
++        for p in products:
++            asin = p.get("asin")
++            if asin and asin not in seen_asins:
++                seen_asins.add(asin)
++                all_products.append(p)
++
++    # Score and rank
++    for p in all_products:
++        p["deal_score"] = compute_deal_score(p)
++
++    all_products.sort(key=lambda p: p["deal_score"], reverse=True)
++    top_products = all_products[: config.TOP_DEALS_LIMIT]
++
++    result = {
++        "category": category_name,
++        "node": node,
++        "products": top_products,
++        "total_results": len(top_products),
++        "cached": False,
++    }
++
++    # Store in cache
++    await cache.set(cache_key, result)
++
++    return result
++
++
+ async def _fetch_with_retry(url: str) -> str | None:
+     """Fetch a URL with stealth headers, retries, and exponential backoff.
+ 
+     Returns:
+         HTML string on success, None on failure after all retries.
+     """
+     for attempt in range(config.MAX_RETRIES):
+         headers = get_stealth_headers()
+         try:
+             async with httpx.AsyncClient(
+diff --git a/tests/test_search_category_deals.py b/tests/test_search_category_deals.py
+new file mode 100644
+index 0000000..ac5ab10
+--- /dev/null
++++ b/tests/test_search_category_deals.py
+@@ -0,0 +1,121 @@
++"""Tests for category deals aggregation."""
++
++import pytest
++from unittest.mock import AsyncMock, patch
++
++from cache.sqlite_cache import make_category_cache_key
++from scraper.engine import search_category_deals
++
++
++def test_category_cache_key_deterministic():
++    key1 = make_category_cache_key("976419031", 40, 90)
++    key2 = make_category_cache_key("976419031", 40, 90)
++    assert key1 == key2
++    assert len(key1) == 64  # SHA256 hex
++
++
++def test_category_cache_key_differs_by_node():
++    key1 = make_category_cache_key("976419031", 40, 90)
++    key2 = make_category_cache_key("1571271031", 40, 90)
++    assert key1 != key2
++
++
++MOCK_HTML = """
++<div data-component-type="s-search-result" data-asin="B001">
++  <h2><a class="a-link-normal" href="/dp/B001">
++    <span class="a-text-normal">Test Product 1</span>
++  </a></h2>
++  <span class="a-price" data-a-color="base"><span class="a-offscreen">₹499</span></span>
++  <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹1,999</span></span>
++  <span class="a-icon-alt">4.2 out of 5 stars</span>
++  <span class="a-size-base">1,543</span>
++  <img class="s-image" src="https://img.example.com/1.jpg">
++</div>
++<div data-component-type="s-search-result" data-asin="B002">
++  <h2><a class="a-link-normal" href="/dp/B002">
++    <span class="a-text-normal">Test Product 2</span>
++  </a></h2>
++  <span class="a-price" data-a-color="base"><span class="a-offscreen">₹299</span></span>
++  <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹999</span></span>
++  <span class="a-icon-alt">3.8 out of 5 stars</span>
++  <span class="a-size-base">500</span>
++  <img class="s-image" src="https://img.example.com/2.jpg">
++</div>
++"""
++
++
++@pytest.mark.asyncio
++async def test_search_category_deals_returns_scored_products():
++    mock_cache = AsyncMock()
++    mock_cache.get = AsyncMock(return_value=None)
++    mock_cache.set = AsyncMock()
++
++    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
++         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
++        mock_fetch.return_value = MOCK_HTML
++
++        result = await search_category_deals(
++            node="976419031",
++            category_name="Electronics",
++            min_discount=40,
++            max_discount=90,
++            cache=mock_cache,
++        )
++
++    assert result["category"] == "Electronics"
++    assert result["node"] == "976419031"
++    assert len(result["products"]) > 0
++    # Every product should have deal_score
++    for p in result["products"]:
++        assert "deal_score" in p
++        assert isinstance(p["deal_score"], int)
++    # Products should be sorted by deal_score descending
++    scores = [p["deal_score"] for p in result["products"]]
++    assert scores == sorted(scores, reverse=True)
++
++
++@pytest.mark.asyncio
++async def test_search_category_deals_deduplicates_asins():
++    mock_cache = AsyncMock()
++    mock_cache.get = AsyncMock(return_value=None)
++    mock_cache.set = AsyncMock()
++
++    # Return same HTML for all pages → duplicate ASINs
++    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
++         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
++        mock_fetch.return_value = MOCK_HTML
++
++        result = await search_category_deals(
++            node="976419031",
++            category_name="Electronics",
++            min_discount=40,
++            max_discount=90,
++            cache=mock_cache,
++        )
++
++    asins = [p["asin"] for p in result["products"]]
++    assert len(asins) == len(set(asins)), "Duplicate ASINs found"
++
++
++@pytest.mark.asyncio
++async def test_search_category_deals_uses_cache():
++    cached_data = {
++        "category": "Electronics",
++        "node": "976419031",
++        "products": [{"asin": "B001", "deal_score": 80}],
++        "total_results": 1,
++        "cached": False,
++    }
++    mock_cache = AsyncMock()
++    mock_cache.get = AsyncMock(return_value=cached_data)
++
++    result = await search_category_deals(
++        node="976419031",
++        category_name="Electronics",
++        min_discount=40,
++        max_discount=90,
++        cache=mock_cache,
++    )
++
++    assert result["cached"] is True
++    assert result["products"][0]["asin"] == "B001"

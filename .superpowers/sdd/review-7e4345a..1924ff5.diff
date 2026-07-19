@@ -1,0 +1,178 @@
+# Review package: 7e4345a..1924ff5
+
+## Commits
+1924ff5 feat: add compute_deal_score with weighted ranking formula
+
+## Files changed
+ .superpowers/sdd/task-2-report.md | 50 +++++++++++++++++++++++++++++++++++++++
+ scraper/engine.py                 | 30 +++++++++++++++++++++++
+ tests/test_deal_score.py          | 49 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 129 insertions(+)
+
+## Diff
+diff --git a/.superpowers/sdd/task-2-report.md b/.superpowers/sdd/task-2-report.md
+new file mode 100644
+index 0000000..c6a2631
+--- /dev/null
++++ b/.superpowers/sdd/task-2-report.md
+@@ -0,0 +1,50 @@
++# Task 2 Report: Deal Score Calculator
++
++## What was Implemented
++1. **Deal Score Calculator**: Implemented `compute_deal_score(product: dict) -> int` in [scraper/engine.py](file:///d:/antigravity_sandbox/DealFinderAmazonPy/scraper/engine.py) to calculate a 0–100 quality score for a scraped product using a weighted formula:
++   - 60% discount percentage (0–100)
++   - 25% rating normalized to a 0–100 scale (rating / 5.0 * 100)
++   - 15% review count normalized to a 0–100 scale, capped at 5,000 reviews (min(reviews, 5000) / 5000 * 100)
++   - Products with no discount (`discount_pct` is `None`) are automatically given a score of 0.
++   - Resulting float score is rounded to the nearest integer.
++2. **Unit Tests**: Created a dedicated test suite in [tests/test_deal_score.py](file:///d:/antigravity_sandbox/DealFinderAmazonPy/tests/test_deal_score.py) covering all requirements and edge cases (all components filled, perfect score, null discount, null rating/reviews, capping of reviews, and all zeros).
++
++## TDD Evidence
++
++### RED (Failing Test Output)
++- **Command run**: `python -m pytest tests/test_deal_score.py -v`
++- **Output**:
++```
++ImportError while importing test module 'D:\antigravity_sandbox\DealFinderAmazonPy\tests\test_deal_score.py'.
++...
++tests\test_deal_score.py:3: in <module>
++    from scraper.engine import compute_deal_score
++E   ImportError: cannot import name 'compute_deal_score' from 'scraper.engine' (D:\antigravity_sandbox\DealFinderAmazonPy\scraper\engine.py)
++```
++- **Why the failure was expected**: The function `compute_deal_score` had not been defined in the engine module.
++
++### GREEN (Passing Test Output)
++- **Command run**: `python -m pytest tests/test_deal_score.py -v`
++- **Output**:
++```
++tests/test_deal_score.py::test_full_score_components PASSED              [ 16%]
++tests/test_deal_score.py::test_perfect_score PASSED                      [ 33%]
++tests/test_deal_score.py::test_null_discount_scores_zero PASSED          [ 50%]
++tests/test_deal_score.py::test_null_rating_and_reviews PASSED            [ 66%]
++tests/test_deal_score.py::test_review_count_capped_at_5000 PASSED        [ 83%]
++tests/test_deal_score.py::test_zero_everything PASSED                    [100%]
++
++============================== 6 passed in 0.95s ==============================
++```
++
++## Files Changed/Created
++- **Modified**: [scraper/engine.py](file:///d:/antigravity_sandbox/DealFinderAmazonPy/scraper/engine.py)
++- **Created**: [tests/test_deal_score.py](file:///d:/antigravity_sandbox/DealFinderAmazonPy/tests/test_deal_score.py)
++
++## Self-Review Findings
++- **Completeness**: Evaluated all requirements for `compute_deal_score`. The function correctly handles missing `rating` and `review_count` fields by defaulting them, caps the normalized review count at 5,000, and returns 0 for any missing/null discount.
++- **Quality**: The calculation matches the exact weighted formula (60/25/15) and rounds properly using Python's `round` function. Docstring matches the implementation and details the scoring logic.
++- **Testing**: Added unit test coverage containing 6 comprehensive test cases. Verified that the entire test suite (30 tests) passes successfully.
++
++## Issues or Concerns
++- None.
+diff --git a/scraper/engine.py b/scraper/engine.py
+index c293a87..bd170a2 100644
+--- a/scraper/engine.py
++++ b/scraper/engine.py
+@@ -54,20 +54,50 @@ def build_category_url(
+     """
+     params = {
+         "rh": f"n:{node}",
+         "pct-off": f"{min_discount}-{max_discount}",
+         "s": "discount-percent-rank",
+         "page": page,
+     }
+     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
+ 
+ 
++def compute_deal_score(product: dict) -> int:
++    """Compute a 0–100 deal quality score for a product.
++
++    Weighted formula:
++        - 60% discount percentage (0–100)
++        - 25% rating normalized to 0–100 scale
++        - 15% review count normalized to 0–100 (capped at 5000)
++
++    Products with no discount are scored 0.
++
++    Args:
++        product: Dict with keys discount_pct, rating, review_count.
++
++    Returns:
++        Integer score from 0 to 100.
++    """
++    discount = product.get("discount_pct")
++    if discount is None:
++        return 0
++
++    rating = product.get("rating") or 0.0
++    reviews = product.get("review_count") or 0
++
++    norm_rating = (rating / 5.0) * 100
++    norm_reviews = (min(reviews, 5000) / 5000) * 100
++
++    score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
++    return round(score)
++
++
+ async def _fetch_with_retry(url: str) -> str | None:
+     """Fetch a URL with stealth headers, retries, and exponential backoff.
+ 
+     Returns:
+         HTML string on success, None on failure after all retries.
+     """
+     for attempt in range(config.MAX_RETRIES):
+         headers = get_stealth_headers()
+         try:
+             async with httpx.AsyncClient(
+diff --git a/tests/test_deal_score.py b/tests/test_deal_score.py
+new file mode 100644
+index 0000000..39a2a28
+--- /dev/null
++++ b/tests/test_deal_score.py
+@@ -0,0 +1,49 @@
++"""Tests for compute_deal_score."""
++
++from scraper.engine import compute_deal_score
++
++
++def test_full_score_components():
++    """Product with all fields filled."""
++    product = {"discount_pct": 75, "rating": 4.2, "review_count": 1543}
++    score = compute_deal_score(product)
++    # 75*0.6 + (4.2/5*100)*0.25 + (1543/5000*100)*0.15
++    # = 45 + 21.0 + 4.629 = 70.629 → 71
++    assert score == 71
++
++
++def test_perfect_score():
++    """Max discount, perfect rating, tons of reviews."""
++    product = {"discount_pct": 100, "rating": 5.0, "review_count": 10000}
++    score = compute_deal_score(product)
++    # 100*0.6 + 100*0.25 + 100*0.15 = 60 + 25 + 15 = 100
++    assert score == 100
++
++
++def test_null_discount_scores_zero():
++    """Products with no discount get score 0."""
++    product = {"discount_pct": None, "rating": 4.5, "review_count": 2000}
++    score = compute_deal_score(product)
++    assert score == 0
++
++
++def test_null_rating_and_reviews():
++    """Missing rating and reviews only use discount component."""
++    product = {"discount_pct": 60, "rating": None, "review_count": None}
++    score = compute_deal_score(product)
++    # 60*0.6 + 0 + 0 = 36
++    assert score == 36
++
++
++def test_review_count_capped_at_5000():
++    """Reviews above 5000 don't increase score."""
++    p1 = {"discount_pct": 50, "rating": 4.0, "review_count": 5000}
++    p2 = {"discount_pct": 50, "rating": 4.0, "review_count": 50000}
++    assert compute_deal_score(p1) == compute_deal_score(p2)
++
++
++def test_zero_everything():
++    """All zeros."""
++    product = {"discount_pct": 0, "rating": 0.0, "review_count": 0}
++    score = compute_deal_score(product)
++    assert score == 0
