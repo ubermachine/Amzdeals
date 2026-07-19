@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amazon Deal Finder</title>
+    <title>Amazon Deal Finder — Best Deals & Top Category Deals</title>
+    <meta name="description" content="Discover the best discounts and top deals across Amazon India categories. Find verified deals with price history.">
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,41 +18,73 @@
             <p class="subtitle">Discover the best discounts across Amazon India</p>
         </header>
 
-        <main>
-            <section class="search-section glass-panel">
-                <form id="search-form">
-                    <div class="input-group">
-                        <label for="query">Search Query</label>
-                        <input type="text" id="query" name="query" placeholder="e.g. Laptops" required>
-                    </div>
-                    <div class="input-group">
-                        <label for="min_discount">Min Discount (%)</label>
-                        <input type="number" id="min_discount" name="min_discount" min="0" max="100" placeholder="0">
-                    </div>
-                    <div class="input-group">
-                        <label for="max_discount">Max Discount (%)</label>
-                        <input type="number" id="max_discount" name="max_discount" min="0" max="100" placeholder="100">
-                    </div>
-                    <div class="button-container">
-                        <button type="submit" id="search-btn">Find Deals</button>
-                    </div>
-                </form>
-            </section>
+        <nav class="tab-bar glass-panel" id="tab-bar">
+            <button class="tab-btn active" data-tab="tab-search" id="tab-btn-search">
+                <span class="tab-icon">🔍</span> Search Deals
+            </button>
+            <button class="tab-btn" data-tab="tab-top-deals" id="tab-btn-top-deals">
+                <span class="tab-icon">🏆</span> Top Deals
+            </button>
+            <div class="tab-indicator" id="tab-indicator"></div>
+        </nav>
 
-            <section id="results-section" class="hidden">
-                <div class="results-header">
-                    <h2>Found Deals</h2>
-                    <span id="cache-status" class="badge hidden"></span>
+        <main>
+            <!-- Tab 1: Search Deals (existing) -->
+            <div class="tab-pane active" id="tab-search">
+                <section class="search-section glass-panel">
+                    <form id="search-form">
+                        <div class="input-group">
+                            <label for="query">Search Query</label>
+                            <input type="text" id="query" name="query" placeholder="e.g. Laptops" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="min_discount">Min Discount (%)</label>
+                            <input type="number" id="min_discount" name="min_discount" min="0" max="100" value="40" step="5">
+                        </div>
+                        <div class="input-group">
+                            <label for="max_discount">Max Discount (%)</label>
+                            <input type="number" id="max_discount" name="max_discount" min="0" max="100" placeholder="100" step="5">
+                        </div>
+                        <div class="button-container">
+                            <button type="submit" id="search-btn">Find Deals</button>
+                        </div>
+                    </form>
+                </section>
+
+                <section id="results-section" class="hidden">
+                    <div class="results-header">
+                        <h2>Found Deals</h2>
+                        <span id="cache-status" class="badge hidden"></span>
+                    </div>
+                    <div id="loading-spinner" class="spinner-container hidden">
+                        <div class="spinner"></div>
+                        <p>Scraping deals, this might take a moment...</p>
+                    </div>
+                    <div id="error-message" class="error hidden"></div>
+                    <div id="product-grid" class="product-grid">
+                        <!-- Products will be injected here -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- Tab 2: Top Deals by Category -->
+            <div class="tab-pane" id="tab-top-deals">
+                <div class="category-pill-bar" id="category-pill-bar">
+                    <!-- Category pills injected by JS -->
                 </div>
-                <div id="loading-spinner" class="spinner-container hidden">
-                    <div class="spinner"></div>
-                    <p>Scraping deals, this might take a moment...</p>
+                <div id="top-deals-error" class="error hidden"></div>
+                <div id="top-deals-skeleton" class="product-grid hidden">
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
                 </div>
-                <div id="error-message" class="error hidden"></div>
-                <div id="product-grid" class="product-grid">
-                    <!-- Products will be injected here -->
+                <div id="top-deals-grid" class="product-grid">
+                    <!-- Top deal products injected by JS -->
                 </div>
-            </section>
+            </div>
         </main>
     </div>
     <script src="app.js"></script>
