@@ -61,6 +61,36 @@ def build_category_url(
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
 
 
+def compute_deal_score(product: dict) -> int:
+    """Compute a 0–100 deal quality score for a product.
+
+    Weighted formula:
+        - 60% discount percentage (0–100)
+        - 25% rating normalized to 0–100 scale
+        - 15% review count normalized to 0–100 (capped at 5000)
+
+    Products with no discount are scored 0.
+
+    Args:
+        product: Dict with keys discount_pct, rating, review_count.
+
+    Returns:
+        Integer score from 0 to 100.
+    """
+    discount = product.get("discount_pct")
+    if discount is None:
+        return 0
+
+    rating = product.get("rating") or 0.0
+    reviews = product.get("review_count") or 0
+
+    norm_rating = (rating / 5.0) * 100
+    norm_reviews = (min(reviews, 5000) / 5000) * 100
+
+    score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
+    return round(score)
+
+
 async def _fetch_with_retry(url: str) -> str | None:
     """Fetch a URL with stealth headers, retries, and exponential backoff.
 
