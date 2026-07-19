@@ -38,6 +38,29 @@ def build_search_url(
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
 
 
+def build_category_url(
+    node: str, min_discount: int, max_discount: int, page: int
+) -> str:
+    """Construct an Amazon.in category browse URL with discount filters.
+
+    Args:
+        node: Amazon browse-node ID (e.g. "976419031" for Electronics).
+        min_discount: Minimum discount percentage.
+        max_discount: Maximum discount percentage.
+        page: Page number (1-indexed).
+
+    Returns:
+        Full Amazon.in browse-node URL string.
+    """
+    params = {
+        "rh": f"n:{node}",
+        "pct-off": f"{min_discount}-{max_discount}",
+        "s": "discount-percent-rank",
+        "page": page,
+    }
+    return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
+
+
 async def _fetch_with_retry(url: str) -> str | None:
     """Fetch a URL with stealth headers, retries, and exponential backoff.
 

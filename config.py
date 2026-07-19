@@ -35,3 +35,7 @@ CATEGORIES = [
     {"name": "Mobile Phones", "node": "1389401031"},
     {"name": "Grocery", "node": "2454178031"},
 ]
+
+# Top Deals
+TOP_DEALS_PAGES = 3       # pages to scrape per category
+TOP_DEALS_LIMIT = 50      # max products per category
