@@ -3,7 +3,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Tests Passing](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-50%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
@@ -15,7 +15,7 @@ Deal Finder automates the extraction of deeply discounted products using Amazon'
 ## 🌟 Key Features
 
 - 🔍 **Targeted Discount Range Search**: Query any product keyword (e.g. *Mechanical Keyboard*, *Perfume*, *Air Fryer*) and filter with precise discount windows (e.g., 40%–90%).
-- 🏆 **Top Deals by Category**: Automated multi-page scraping across 10 core Amazon.in browse-node categories (Electronics, Fashion, Beauty, Home & Kitchen, Computers, Mobile Phones, Grocery, Books, Sports, Toys).
+- 🏆 **Top Deals by Category (Top 100 & Popularity Sort)**: Automated multi-page scraping across 10 core Amazon.in categories, delivering up to 100 products per category with multi-mode sorting (defaulting to Amazon's native Bestsellers / Popularity ranking, alongside Deal Score, Discount %, and Reviews).
 - 🧠 **Statistical Outlier Verification (`is_true_deal`)**: Weeds out artificial MRP markups and baseline discounts by verifying that a product's discount is both $\ge 40\%$ and at least $10\%$ above the category/search median.
 - 📊 **Multi-Factor Deal Quality Score (`deal_score`)**: Proprietary 0–100 score ranking products by balancing discount depth (60%), customer review rating (25%), and review volume (15%, capped at 5,000).
 - 📈 **Integrated Keepa Price History Graphs**: 1-click embedded 365-day price history charts via a local backend proxy (`GET /api/keepa-graph`) with `referrerpolicy="no-referrer"` fallback, eliminating `localhost` WAF 403 blocks and ad-blocker interruptions.
@@ -139,7 +139,7 @@ Searches Amazon.in products matching a query term within a specific discount ran
 ---
 
 ### 2. Top Deals by Category
-Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 3 scraped pages.
+Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 5 scraped pages, returning up to 100 products.
 
 - **Endpoint**: `GET /api/top-deals`
 - **Parameters**:
@@ -148,13 +148,14 @@ Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 
   | `category` | string | **Yes** | — | Amazon browse-node ID (e.g., `976419031`) |
   | `min_discount` | integer | No | `40` | Minimum discount percentage (0–99) |
   | `max_discount` | integer | No | `90` | Maximum discount percentage (1–100) |
+  | `sort_by` | string | No | `popularity` | Sort order: `popularity`, `deal_score`, `discount`, `reviews` |
 
 - **Sample Response**:
   ```json
   {
     "category": "Electronics",
     "node": "976419031",
-    "total_results": 50,
+    "total_results": 100,
     "cached": true,
     "products": [
       {
@@ -284,8 +285,8 @@ All core tuning parameters are centralized in [`config.py`](config.py):
 | `BACKOFF_BASE` | `2` | Exponential backoff multiplier ($2^1, 2^2, 2^3$) |
 | `THROTTLE_MIN` / `MAX` | `2.0` / `5.0` | Random delay bounds between requests (seconds) |
 | `MAX_CONCURRENT_SCRAPES` | `1` | Semaphore concurrency limit for Amazon requests |
-| `TOP_DEALS_PAGES` | `3` | Number of browse-node pages scraped per category |
-| `TOP_DEALS_LIMIT` | `50` | Maximum top-scored products returned per category |
+| `TOP_DEALS_PAGES` | `5` | Number of browse-node pages scraped per category |
+| `TOP_DEALS_LIMIT` | `100` | Maximum top-scored products returned per category |
 
 ---
 
@@ -335,7 +336,7 @@ DealFinderAmazonPy/
 │   ├── style.css               # Glassmorphism styling, responsive CSS grid, animations
 │   └── app.js                  # Tab controller, category pills, Keepa chart toggles & XSS guard
 │
-├── tests/                      # Pytest automated test suite (43 tests)
+├── tests/                      # Pytest automated test suite (50 tests)
 │   ├── test_cache.py
 │   ├── test_category_url.py
 │   ├── test_deal_score.py
