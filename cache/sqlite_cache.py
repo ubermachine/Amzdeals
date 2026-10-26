@@ -14,9 +14,9 @@ def make_cache_key(query: str, min_discount: int, max_discount: int, page: int) 
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def make_category_cache_key(node: str, min_discount: int, max_discount: int) -> str:
+def make_category_cache_key(node: str, min_discount: int, max_discount: int, sort_by: str = "popularity") -> str:
     """Generate a deterministic SHA256 cache key for category deals."""
-    raw = f"top-deals:{node}:{min_discount}:{max_discount}"
+    raw = f"top-deals:{node}:{min_discount}:{max_discount}:{sort_by}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

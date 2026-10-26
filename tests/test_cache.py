@@ -2,7 +2,7 @@ import asyncio
 import os
 import time
 import pytest
-from cache.sqlite_cache import SearchCache, make_cache_key
+from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
 
 TEST_DB = "test_cache.db"
 
@@ -34,6 +34,14 @@ def test_make_cache_key_different_inputs():
     k1 = make_cache_key("Perfume", 40, 90, 1)
     k2 = make_cache_key("Laptop", 40, 90, 1)
     assert k1 != k2
+
+
+def test_make_category_cache_key_with_sort():
+    k1 = make_category_cache_key("976419031", 40, 90, sort_by="popularity")
+    k2 = make_category_cache_key("976419031", 40, 90, sort_by="deal_score")
+    k_default = make_category_cache_key("976419031", 40, 90)
+    assert k1 != k2
+    assert k1 == k_default
 
 
 def test_cache_get_miss(cache):
