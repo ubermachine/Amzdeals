@@ -136,3 +136,14 @@ def test_parse_modern_amazon_reviews_and_badges():
     assert products[1]["asin"] == "B0FD2C5LLX"
     assert products[1]["review_count"] == 11250
     assert products[1]["badge"] == "Amazon's Choice"
+
+
+from scraper.parser import _parse_rating
+
+
+def test_parse_rating_variants():
+    assert _parse_rating("4.2 out of 5 stars") == 4.2
+    assert _parse_rating("4.5 stars") == 4.5
+    assert _parse_rating("3 star") == 3.0
+    assert _parse_rating(None) is None
+    assert _parse_rating("invalid") is None

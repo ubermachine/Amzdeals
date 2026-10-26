@@ -148,6 +148,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function showTopDealsError(msg) {
+        topDealsError.innerHTML = `
+            <div class="error-content">
+                <span>${escapeHtml(msg)}</span>
+                <button type="button" class="retry-btn" id="retry-deals-btn">🔄 Retry</button>
+            </div>
+        `;
+        topDealsError.classList.remove('hidden');
+        const retryBtn = document.getElementById('retry-deals-btn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                if (currentCategoryNode) {
+                    fetchCategoryDeals(currentCategoryNode, currentCategoryName, currentSortBy, true);
+                }
+            });
+        }
+    }
+
     // ─── Fetch Category Deals ───
     async function fetchCategoryDeals(node, name, sortBy = currentSortBy, showSkeleton = true) {
         currentCategoryNode = node;
@@ -187,8 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await resp.json();
 
             if (data.error) {
-                topDealsError.textContent = data.error;
-                topDealsError.classList.remove('hidden');
+                showTopDealsError(data.error);
             } else if (data.products) {
                 // Preserve original rank order from Amazon
                 data.products.forEach((p, idx) => {
@@ -204,8 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             if (err.name !== 'AbortError') {
-                topDealsError.textContent = err.message || 'Failed to load deals for this category.';
-                topDealsError.classList.remove('hidden');
+                showTopDealsError(err.message || 'Failed to load deals for this category.');
             }
         } finally {
             if (currentAbortController === controller) {
@@ -308,12 +324,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isChoice = product.badge.toLowerCase().includes('choice');
                 const badgeClass = isChoice ? 'badge-choice' : 'badge-bestseller';
                 const badgeIcon = isChoice ? '✨' : '🔥';
-                amazonBadge = `<div class="amazon-badge ${badgeClass}">${badgeIcon} ${escapeHtml(product.badge)}</div>`;
+                amazonBadge = `<span class="amazon-badge ${badgeClass}">${badgeIcon} ${escapeHtml(product.badge)}</span>`;
             }
 
             let verifiedBadge = '';
+            let trueDealTag = '';
             if (product.is_true_deal) {
                 verifiedBadge = `<div class="verified-badge">✓ Verified Deal</div>`;
+                trueDealTag = `<span class="verified-tag">✓ Verified Deal</span>`;
                 card.classList.add('true-deal');
             }
 
@@ -343,7 +361,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
                 </div>
                 <div class="product-info">
-                    ${amazonBadge}
+                    <div class="product-badges-row">
+                        ${amazonBadge}
+                        ${trueDealTag}
+                    </div>
                     <h3 class="product-title" title="${escapeHtml(product.title)}">${escapeHtml(product.title)}</h3>
                     <div class="product-rating">
                         ${ratingHtml}

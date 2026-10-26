@@ -247,3 +247,36 @@ async def test_search_category_deals_bestsellers_alias():
 
     assert len(result["products"]) == 2
     assert result["products"][0]["asin"] == "B002"
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_stops_early_when_limit_reached():
+    """If 100 products are collected, it should not fetch remaining pages."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    # Generate HTML with 100 distinct items
+    many_items = "".join([
+        f'''<div data-component-type="s-search-result" data-asin="ASIN_{i}">
+            <h2><a href="/dp/ASIN_{i}"><span class="a-text-normal">Product {i}</span></a></h2>
+            <span class="a-price"><span class="a-offscreen">₹100</span></span>
+            <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹200</span></span>
+        </div>''' for i in range(110)
+    ])
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = many_items
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    # Should have called fetch only once because page 1 had >= 100 products
+    assert mock_fetch.call_count == 1
+    assert len(result["products"]) == 100

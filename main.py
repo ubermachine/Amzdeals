@@ -69,6 +69,9 @@ async def api_search(
     page: int = Query(1, ge=1, le=100, description="Page number"),
 ):
     """Search for deals on Amazon.in."""
+    if min_discount > max_discount:
+        raise HTTPException(status_code=400, detail="min_discount cannot be greater than max_discount")
+
     global _cache
     if not _cache:
         _cache = SearchCache()
@@ -98,6 +101,9 @@ async def api_top_deals(
     sort_by: str = Query("popularity", pattern="^(popularity|bestsellers|deal_score|discount|reviews)$", description="Sort order"),
 ):
     """Get top deals for a specific Amazon.in category."""
+    if min_discount > max_discount:
+        raise HTTPException(status_code=400, detail="min_discount cannot be greater than max_discount")
+
     global _cache
     if not _cache:
         _cache = SearchCache()

@@ -12,6 +12,7 @@ Safety features:
 import asyncio
 import logging
 import random
+import statistics
 from urllib.parse import urlencode
 
 from curl_cffi import requests
@@ -182,9 +183,10 @@ async def search_category_deals(
     any_success = False
 
     for page_num in range(1, config.TOP_DEALS_PAGES + 1):
-        # Throttle between pages
-        delay = random.uniform(config.THROTTLE_MIN, config.THROTTLE_MAX)
-        await asyncio.sleep(delay)
+        # Throttle only between successive pages, avoiding delay on page 1
+        if page_num > 1:
+            delay = random.uniform(config.THROTTLE_MIN, config.THROTTLE_MAX)
+            await asyncio.sleep(delay)
 
         url = build_category_url(node, min_discount, max_discount, page_num, sort_by=sort_by)
         html = await _fetch_with_retry(url)
@@ -198,11 +200,19 @@ async def search_category_deals(
 
         any_success = True
         products = parse_search_results(html)
+        if not products and page_num > 1:
+            # Reached end of available results on Amazon
+            break
+
         for p in products:
             asin = p.get("asin")
             if asin and asin not in seen_asins:
                 seen_asins.add(asin)
                 all_products.append(p)
+
+        # Early exit if we have already accumulated target limit of deals
+        if len(all_products) >= config.TOP_DEALS_LIMIT:
+            break
 
     if not any_success:
         return {
@@ -214,8 +224,16 @@ async def search_category_deals(
             "error": "Failed to fetch results from Amazon. Please try again later.",
         }
 
-    # Score and rank
+    # Recompute is_true_deal statistically across the entire category sample
+    valid_discounts = [p["discount_pct"] for p in all_products if p.get("discount_pct") is not None]
+    category_median_discount = statistics.median(valid_discounts) if valid_discounts else 0
+
     for p in all_products:
+        d = p.get("discount_pct")
+        if d is not None and d >= 40 and d >= category_median_discount + 10:
+            p["is_true_deal"] = True
+        else:
+            p["is_true_deal"] = False
         p["deal_score"] = compute_deal_score(p)
 
     if sort_by == "deal_score":

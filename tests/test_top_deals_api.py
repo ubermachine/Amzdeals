@@ -100,3 +100,12 @@ async def test_top_deals_bestsellers_alias():
     assert resp.status_code == 200
     mock_fn.assert_called_once()
     assert mock_fn.call_args.kwargs.get("sort_by") == "bestsellers"
+
+
+@pytest.mark.asyncio
+async def test_top_deals_validates_min_max_discount_order():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/top-deals?category=976419031&min_discount=80&max_discount=40")
+    assert resp.status_code == 400
+    assert "cannot be greater than" in resp.json()["detail"]

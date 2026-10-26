@@ -23,12 +23,19 @@ def _parse_price(text: str | None) -> float | None:
 
 
 def _parse_rating(text: str | None) -> float | None:
-    """Extract rating from text like '4.2 out of 5 stars'."""
+    """Extract rating from text like '4.2 out of 5 stars' or '4.2 stars'."""
     if not text:
         return None
-    match = re.search(r"(\d+\.?\d*)\s+out\s+of\s+5", text)
+    match = re.search(r"(\d+\.?\d*)\s*(?:out of 5|stars|star)", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"(\d+\.?\d*)\s*out of", text, re.IGNORECASE)
     if match:
-        return float(match.group(1))
+        try:
+            val = float(match.group(1))
+            if 0 <= val <= 5.0:
+                return val
+        except (ValueError, TypeError):
+            return None
     return None
 
 
@@ -121,6 +128,8 @@ def parse_search_results(html: str) -> list[dict]:
         # Compute from prices if badge not found
         if discount_pct is None and current_price and original_price and original_price > 0:
             discount_pct = round((1 - current_price / original_price) * 100)
+        if discount_pct is not None:
+            discount_pct = max(0, min(99, discount_pct))
 
         # Rating
         rating_tag = item.select_one("span.a-icon-alt")
