@@ -197,3 +197,53 @@ async def test_search_category_deals_all_fetches_fail_no_cache():
     assert result["total_results"] == 0
     assert result["cached"] is False
     mock_cache.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_never_caches_empty_products():
+    """If Amazon returns HTML with 0 products, the result MUST NOT be cached."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    # Empty HTML with no products
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = "<html><body>No products here</body></html>"
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+            sort_by="popularity",
+        )
+
+    assert result["products"] == []
+    assert result["total_results"] == 0
+    # Invariant: Never cache empty products!
+    mock_cache.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_bestsellers_alias():
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = MOCK_HTML
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+            sort_by="bestsellers",
+        )
+
+    assert len(result["products"]) == 2
+    assert result["products"][0]["asin"] == "B002"

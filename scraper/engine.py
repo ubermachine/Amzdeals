@@ -89,6 +89,7 @@ def build_category_url(
     """
     amazon_sort_map = {
         "popularity": "popularity-rank",
+        "bestsellers": "popularity-rank",
         "discount": "discount-percent-rank",
         "reviews": "review-rank",
         "deal_score": "discount-percent-rank",
@@ -163,6 +164,10 @@ async def search_category_deals(
     Returns:
         Dict with keys: category, node, products, total_results, cached.
     """
+    # Normalize sort aliases
+    if sort_by == "bestsellers":
+        sort_by = "popularity"
+
     cache_key = make_category_cache_key(node, min_discount, max_discount, sort_by=sort_by)
 
     # Check cache first
@@ -231,8 +236,9 @@ async def search_category_deals(
         "cached": False,
     }
 
-    # Store in cache
-    await cache.set(cache_key, result)
+    # Store in cache only when non-empty to avoid caching transient bot-checks/errors
+    if top_products:
+        await cache.set(cache_key, result)
 
     return result
 
@@ -264,11 +270,13 @@ async def _fetch_with_retry(url: str) -> str | None:
 
                 # Check for CAPTCHA page
                 text = response.text
+                lower_text = text.lower()
                 is_captcha = (
-                    "captcha" in text.lower()
-                    and "Type the characters you see" in text
-                ) or (
-                    "/errors/validateCaptcha" in text
+                    ("captcha" in lower_text and "type the characters you see" in lower_text)
+                    or "/errors/validatecaptcha" in lower_text
+                    or "<title>robot check</title>" in lower_text
+                    or ("robot check" in lower_text and "amazon" in lower_text)
+                    or "enter the characters you see below" in lower_text
                 )
                 if is_captcha:
                     logger.warning(
@@ -359,7 +367,8 @@ async def search_deals(
         "cached": False,
     }
 
-    # Store in cache
-    await cache.set(cache_key, result)
+    # Store in cache only when non-empty to avoid caching transient bot-checks/errors
+    if products:
+        await cache.set(cache_key, result)
 
     return result

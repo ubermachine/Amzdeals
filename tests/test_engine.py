@@ -5,14 +5,9 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from scraper.engine import build_search_url, search_deals
 from cache.sqlite_cache import SearchCache
 
-TEST_DB = "test_engine_cache.db"
-
-
-@pytest.fixture(autouse=True)
-def cleanup():
-    yield
-    if os.path.exists(TEST_DB):
-        os.remove(TEST_DB)
+@pytest.fixture
+def test_db_path(tmp_path):
+    return str(tmp_path / "test_cache.db")
 
 
 def test_build_search_url_basic():
@@ -30,9 +25,9 @@ def test_build_search_url_page_2():
 
 
 @pytest.mark.asyncio
-async def test_search_deals_returns_cached():
+async def test_search_deals_returns_cached(test_db_path):
     """When cache has data, search_deals should return it without hitting Amazon."""
-    cache = SearchCache(TEST_DB)
+    cache = SearchCache(test_db_path)
     await cache.init()
 
     cached_data = {
@@ -54,9 +49,9 @@ async def test_search_deals_returns_cached():
 
 
 @pytest.mark.asyncio
-async def test_search_deals_fetches_on_cache_miss():
+async def test_search_deals_fetches_on_cache_miss(test_db_path):
     """When cache is empty, search_deals should fetch from Amazon."""
-    cache = SearchCache(TEST_DB)
+    cache = SearchCache(test_db_path)
     await cache.init()
 
     fake_html = """
@@ -92,4 +87,34 @@ async def test_search_deals_fetches_on_cache_miss():
         assert len(result["products"]) >= 1
         assert result["products"][0]["asin"] == "FRESH001"
 
+    await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_search_deals_never_caches_empty_products(test_db_path):
+    """When scrape returns 0 products, search_deals must NOT cache the empty result."""
+    cache = SearchCache(test_db_path)
+    await cache.init()
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = "<html><body>No products here</body></html>"
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session:
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_get_session.return_value = mock_session
+
+        with patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock), \
+             patch("scraper.engine._scrape_semaphore", new_callable=AsyncMock) as mock_sem:
+            mock_sem.__aenter__ = AsyncMock(return_value=None)
+            mock_sem.__aexit__ = AsyncMock(return_value=None)
+            result = await search_deals("EmptyQuery", 40, 90, 1, cache)
+
+    assert result["products"] == []
+    from cache.sqlite_cache import make_cache_key
+    key = make_cache_key("EmptyQuery", 40, 90, 1)
+    cached = await cache.get(key)
+    assert cached is None, "Empty search result should not be stored in cache"
     await cache.close()

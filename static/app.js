@@ -25,13 +25,65 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCategoryNode = null;
     let currentCategoryName = null;
     let currentSortBy = 'popularity';
+    let currentLoadedProducts = [];
+
+    // ─── In-memory Sorting Helper ───
+    function applySorting(products, sortBy) {
+        if (!products || products.length === 0) return [];
+        const sorted = [...products];
+        if (sortBy === 'deal_score') {
+            sorted.sort((a, b) => (b.deal_score ?? -1) - (a.deal_score ?? -1));
+        } else if (sortBy === 'discount') {
+            sorted.sort((a, b) => (b.discount_pct ?? -1) - (a.discount_pct ?? -1));
+        } else if (sortBy === 'reviews') {
+            sorted.sort((a, b) => (b.review_count ?? -1) - (a.review_count ?? -1));
+        } else if (sortBy === 'popularity' || sortBy === 'bestsellers') {
+            sorted.sort((a, b) => (a._original_rank ?? 9999) - (b._original_rank ?? 9999));
+        }
+        return sorted;
+    }
+
+    function handleSortChange(newSortBy) {
+        currentSortBy = newSortBy;
+
+        // Sync Sort Pills
+        document.querySelectorAll('.sort-pill').forEach(btn => {
+            if (btn.getAttribute('data-sort') === newSortBy) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        // Sync Select Dropdown
+        if (topDealsSort && topDealsSort.value !== newSortBy) {
+            topDealsSort.value = newSortBy;
+        }
+
+        // Instant 0ms In-Memory Re-sort if products already loaded
+        if (currentLoadedProducts && currentLoadedProducts.length > 0) {
+            const sorted = applySorting(currentLoadedProducts, newSortBy);
+            renderProducts(sorted, topDealsGrid, true, newSortBy);
+        }
+
+        // Server-side fetch in background without wiping grid with skeleton
+        if (currentCategoryNode) {
+            fetchCategoryDeals(currentCategoryNode, currentCategoryName, newSortBy, false);
+        }
+    }
+
+    // Attach click listeners to Sort Pills
+    document.querySelectorAll('.sort-pill').forEach(pill => {
+        pill.addEventListener('click', (e) => {
+            e.preventDefault();
+            const sortBy = pill.getAttribute('data-sort');
+            handleSortChange(sortBy);
+        });
+    });
 
     if (topDealsSort) {
         topDealsSort.addEventListener('change', (e) => {
-            currentSortBy = e.target.value;
-            if (currentCategoryNode) {
-                fetchCategoryDeals(currentCategoryNode, currentCategoryName, currentSortBy);
-            }
+            handleSortChange(e.target.value);
         });
     }
 
@@ -97,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Fetch Category Deals ───
-    async function fetchCategoryDeals(node, name, sortBy = currentSortBy) {
+    async function fetchCategoryDeals(node, name, sortBy = currentSortBy, showSkeleton = true) {
         currentCategoryNode = node;
         currentCategoryName = name;
         currentSortBy = sortBy;
@@ -109,13 +161,14 @@ document.addEventListener('DOMContentLoaded', () => {
         currentAbortController = new AbortController();
         const controller = currentAbortController;
 
-        // Show skeleton, hide grid and error
-        topDealsSkeleton.classList.remove('hidden');
-        topDealsGrid.innerHTML = '';
-        topDealsError.classList.add('hidden');
-        if (topDealsCount) topDealsCount.classList.add('hidden');
+        if (showSkeleton) {
+            topDealsSkeleton.classList.remove('hidden');
+            topDealsGrid.innerHTML = '';
+            topDealsError.classList.add('hidden');
+            if (topDealsCount) topDealsCount.classList.add('hidden');
+        }
 
-        // Mark pill as loading
+        // Mark category pill as loading
         document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('loading'));
         const activePill = document.querySelector(`.category-pill[data-node="${node}"]`);
         if (activePill) activePill.classList.add('loading');
@@ -136,9 +189,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.error) {
                 topDealsError.textContent = data.error;
                 topDealsError.classList.remove('hidden');
-            } else {
-                renderProducts(data.products, topDealsGrid, true);
-                if (topDealsCount && data.products) {
+            } else if (data.products) {
+                // Preserve original rank order from Amazon
+                data.products.forEach((p, idx) => {
+                    p._original_rank = idx + 1;
+                });
+                currentLoadedProducts = data.products;
+                const sorted = applySorting(currentLoadedProducts, sortBy);
+                renderProducts(sorted, topDealsGrid, true, sortBy);
+                if (topDealsCount) {
                     topDealsCount.textContent = `Showing ${data.products.length} Deals`;
                     topDealsCount.classList.remove('hidden');
                 }
@@ -210,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ─── Shared Product Renderer ───
-    function renderProducts(products, targetGrid, showDealScore) {
+    function renderProducts(products, targetGrid, showDealScore, sortBy = null) {
         if (!products || products.length === 0) {
             const errorEl = targetGrid === productGrid ? errorMessage : topDealsError;
             errorEl.textContent = 'No deals found matching your criteria.';
@@ -220,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         targetGrid.innerHTML = '';
 
-        products.forEach(product => {
+        products.forEach((product, idx) => {
             const card = document.createElement('div');
             card.className = 'product-card';
 
@@ -239,6 +298,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 discountBadge = `<div class="discount-badge">${product.discount_pct}% OFF</div>`;
             }
 
+            let rankBadge = '';
+            if (sortBy === 'popularity' || sortBy === 'bestsellers') {
+                rankBadge = `<div class="rank-badge" title="Popularity Rank #${idx + 1}">#${idx + 1}</div>`;
+            }
+
+            let amazonBadge = '';
+            if (product.badge) {
+                const isChoice = product.badge.toLowerCase().includes('choice');
+                const badgeClass = isChoice ? 'badge-choice' : 'badge-bestseller';
+                const badgeIcon = isChoice ? '✨' : '🔥';
+                amazonBadge = `<div class="amazon-badge ${badgeClass}">${badgeIcon} ${escapeHtml(product.badge)}</div>`;
+            }
+
             let verifiedBadge = '';
             if (product.is_true_deal) {
                 verifiedBadge = `<div class="verified-badge">✓ Verified Deal</div>`;
@@ -255,17 +327,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 dealScoreBadge = `<div class="deal-score-badge ${scoreClass}">${score}</div>`;
             }
 
-            const ratingHtml = product.rating ?
-                `<span class="star-icon">★</span> <span class="rating-text">${product.rating}</span>` :
-                `<span class="rating-text">No rating</span>`;
+            // Ratings and review count
+            let ratingHtml = '<span class="rating-text">No rating</span>';
+            if (product.rating) {
+                const revCountText = product.review_count != null ?
+                    `<span class="review-count">(${product.review_count.toLocaleString('en-IN')})</span>` : '';
+                ratingHtml = `<span class="star-icon">★</span> <span class="rating-text">${product.rating}</span> ${revCountText}`;
+            }
 
             card.innerHTML = `
                 ${discountBadge}
+                ${rankBadge}
                 ${showDealScore ? dealScoreBadge : verifiedBadge}
                 <div class="image-container">
                     <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
                 </div>
                 <div class="product-info">
+                    ${amazonBadge}
                     <h3 class="product-title" title="${escapeHtml(product.title)}">${escapeHtml(product.title)}</h3>
                     <div class="product-rating">
                         ${ratingHtml}

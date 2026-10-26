@@ -79,3 +79,24 @@ async def test_top_deals_passes_sort_by():
     assert resp.status_code == 200
     mock_fn.assert_called_once()
     assert mock_fn.call_args.kwargs.get("sort_by") == "reviews"
+
+
+@pytest.mark.asyncio
+async def test_top_deals_bestsellers_alias():
+    mock_result = {
+        "category": "Electronics",
+        "node": "976419031",
+        "products": [],
+        "total_results": 0,
+        "cached": False,
+    }
+
+    with patch("main.search_category_deals", new_callable=AsyncMock) as mock_fn:
+        mock_fn.return_value = mock_result
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/top-deals?category=976419031&sort_by=bestsellers")
+
+    assert resp.status_code == 200
+    mock_fn.assert_called_once()
+    assert mock_fn.call_args.kwargs.get("sort_by") == "bestsellers"

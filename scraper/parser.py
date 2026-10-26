@@ -33,12 +33,23 @@ def _parse_rating(text: str | None) -> float | None:
 
 
 def _parse_review_count(text: str | None) -> int | None:
-    """Extract review count from text like '1,543' or '12K'."""
+    """Extract review count from text like '1,543', '(42.8K)', '12K', '1.2M', or '42,864 ratings'."""
     if not text:
         return None
-    cleaned = text.strip().replace(",", "")
+    match = re.search(r"([\d,]+(?:\.\d+)?)\s*([kKmM])?", text.strip())
+    if not match:
+        return None
+    num_str = match.group(1).replace(",", "")
+    suffix = match.group(2)
     try:
-        return int(cleaned)
+        val = float(num_str)
+        if suffix:
+            suffix_lower = suffix.lower()
+            if suffix_lower == "k":
+                val *= 1000
+            elif suffix_lower == "m":
+                val *= 1000000
+        return int(round(val))
     except (ValueError, TypeError):
         return None
 
@@ -116,13 +127,27 @@ def parse_search_results(html: str) -> list[dict]:
         rating = _parse_rating(rating_tag.get_text() if rating_tag else None)
 
         # Review count
-        review_tags = item.select("span.a-size-base")
         review_count = None
-        for rt in review_tags:
-            text = rt.get_text(strip=True)
-            if re.match(r"^[\d,]+$", text):
-                review_count = _parse_review_count(text)
-                break
+        rev_link = item.select_one('a[aria-label*="rating"], a[aria-label*="review"]')
+        if rev_link:
+            aria = rev_link.get("aria-label", "")
+            if "out of" not in aria.lower():
+                review_count = _parse_review_count(aria)
+
+        if review_count is None:
+            candidates = item.select(
+                "span.s-underline-text, span.puis-normal-weight-text, "
+                "a[href*='#customerReviews'] span, span.a-size-mini, span.a-size-base"
+            )
+            for ct in candidates:
+                txt = ct.get_text(strip=True)
+                if not txt or "bought" in txt.lower():
+                    continue
+                if re.search(r"\(?\s*[\d,]+(?:\.\d+)?\s*[kKmM]?\s*\)?", txt):
+                    cnt = _parse_review_count(txt)
+                    if cnt is not None and cnt > 0:
+                        review_count = cnt
+                        break
 
         # Product URL
         link_tag = item.select_one("h2 a.a-link-normal")
@@ -142,6 +167,25 @@ def parse_search_results(html: str) -> list[dict]:
         coupon_tag = item.select_one("span.s-coupon-highlight-color, .s-coupon-unclipped")
         coupon = coupon_tag.get_text(strip=True) if coupon_tag else None
 
+        # Badge extraction (Best Seller / Amazon's Choice)
+        badge = None
+        for b_tag in item.select("span.a-badge-text, span.a-badge-label, .a-badge"):
+            b_text = b_tag.get_text(strip=True)
+            if not b_text:
+                continue
+            lower_b = b_text.lower()
+            if "best seller" in lower_b or "bestseller" in lower_b:
+                badge = "Best Seller"
+                break
+            elif "amazon's choice" in lower_b or "choice" in lower_b:
+                badge = "Amazon's Choice"
+                break
+        if not badge:
+            if item.select_one('[aria-label*="Best Seller"]'):
+                badge = "Best Seller"
+            elif item.select_one('[aria-label*="Choice"]'):
+                badge = "Amazon's Choice"
+
         products.append(
             {
                 "asin": asin,
@@ -155,6 +199,7 @@ def parse_search_results(html: str) -> list[dict]:
                 "product_url": product_url,
                 "is_prime": is_prime,
                 "coupon": coupon,
+                "badge": badge,
             }
         )
 

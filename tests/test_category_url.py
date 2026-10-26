@@ -28,3 +28,8 @@ def test_build_category_url_page_2():
     assert "rh=n%3A1571271031" in url
     assert "pct-off=10-99" in url
     assert "page=2" in url
+
+
+def test_build_category_url_bestsellers_alias():
+    url = build_category_url("976419031", 40, 90, 1, sort_by="bestsellers")
+    assert "s=popularity-rank" in url

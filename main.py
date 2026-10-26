@@ -95,7 +95,7 @@ async def api_top_deals(
     category: str = Query(..., min_length=1, description="Amazon browse-node ID"),
     min_discount: int = Query(40, ge=0, le=99, description="Minimum discount %"),
     max_discount: int = Query(90, ge=1, le=100, description="Maximum discount %"),
-    sort_by: str = Query("popularity", pattern="^(popularity|deal_score|discount|reviews)$", description="Sort order"),
+    sort_by: str = Query("popularity", pattern="^(popularity|bestsellers|deal_score|discount|reviews)$", description="Sort order"),
 ):
     """Get top deals for a specific Amazon.in category."""
     global _cache

@@ -85,3 +85,54 @@ def test_parse_partial_product():
     assert results[0]["asin"] == "B099TEST"
     assert results[0]["current_price"] is None
     assert results[0]["original_price"] is None
+
+
+from scraper.parser import _parse_review_count
+
+
+def test_parse_review_count_formats():
+    assert _parse_review_count("1,543") == 1543
+    assert _parse_review_count("(42.8K)") == 42800
+    assert _parse_review_count("11K") == 11000
+    assert _parse_review_count("1.2M") == 1200000
+    assert _parse_review_count("(33)") == 33
+    assert _parse_review_count("42,864 ratings") == 42864
+    assert _parse_review_count(None) is None
+    assert _parse_review_count("no reviews") is None
+
+
+def test_parse_modern_amazon_reviews_and_badges():
+    html = '''
+    <div data-component-type="s-search-result" data-asin="B0FJF3WJ1H">
+      <h2><a class="a-link-normal" href="/dp/B0FJF3WJ1H">
+        <span class="a-text-normal">Modern Earbuds</span>
+      </a></h2>
+      <span class="a-price" data-a-color="base"><span class="a-offscreen">₹1,299</span></span>
+      <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹2,999</span></span>
+      <span class="a-icon-alt">4.2 out of 5 stars</span>
+      <span class="a-size-mini puis-normal-weight-text s-underline-text">(42.8K)</span>
+      <span class="a-badge-text">Best Seller</span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="B0FD2C5LLX">
+      <h2><a class="a-link-normal" href="/dp/B0FD2C5LLX">
+        <span class="a-text-normal">Phone Case</span>
+      </a></h2>
+      <span class="a-price" data-a-color="base"><span class="a-offscreen">₹599</span></span>
+      <span class="a-price" data-a-strike="true"><span class="a-offscreen">₹1,199</span></span>
+      <span class="a-icon-alt">4.4 out of 5 stars</span>
+      <a class="a-link-normal" aria-label="11,250 ratings" href="#customerReviews"></a>
+      <span class="a-badge-label">Amazon's Choice</span>
+    </div>
+    '''
+    products = parse_search_results(html)
+    assert len(products) == 2
+    
+    # First product
+    assert products[0]["asin"] == "B0FJF3WJ1H"
+    assert products[0]["review_count"] == 42800
+    assert products[0]["badge"] == "Best Seller"
+    
+    # Second product
+    assert products[1]["asin"] == "B0FD2C5LLX"
+    assert products[1]["review_count"] == 11250
+    assert products[1]["badge"] == "Amazon's Choice"

@@ -148,7 +148,7 @@ Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 
   | `category` | string | **Yes** | — | Amazon browse-node ID (e.g., `976419031`) |
   | `min_discount` | integer | No | `40` | Minimum discount percentage (0–99) |
   | `max_discount` | integer | No | `90` | Maximum discount percentage (1–100) |
-  | `sort_by` | string | No | `popularity` | Sort order: `popularity`, `deal_score`, `discount`, `reviews` |
+  | `sort_by` | string | No | `popularity` | Sort order: `popularity` (or `bestsellers`), `deal_score`, `discount`, `reviews` |
 
 - **Sample Response**:
   ```json
@@ -171,7 +171,8 @@ Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 
         "is_prime": true,
         "coupon": null,
         "is_true_deal": true,
-        "deal_score": 83
+        "deal_score": 83,
+        "badge": "Best Seller"
       }
     ]
   }
