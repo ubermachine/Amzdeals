@@ -3,7 +3,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Tests Passing](https://img.shields.io/badge/tests-39%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
@@ -18,7 +18,7 @@ Deal Finder automates the extraction of deeply discounted products using Amazon'
 - 🏆 **Top Deals by Category**: Automated multi-page scraping across 10 core Amazon.in browse-node categories (Electronics, Fashion, Beauty, Home & Kitchen, Computers, Mobile Phones, Grocery, Books, Sports, Toys).
 - 🧠 **Statistical Outlier Verification (`is_true_deal`)**: Weeds out artificial MRP markups and baseline discounts by verifying that a product's discount is both $\ge 40\%$ and at least $10\%$ above the category/search median.
 - 📊 **Multi-Factor Deal Quality Score (`deal_score`)**: Proprietary 0–100 score ranking products by balancing discount depth (60%), customer review rating (25%), and review volume (15%, capped at 5,000).
-- 📈 **Integrated Keepa Price History Graphs**: 1-click embedded 365-day price history graphs loaded directly from Keepa's Amazon India engine (`domain=10`) without requiring an external API subscription.
+- 📈 **Integrated Keepa Price History Graphs**: 1-click embedded 365-day price history charts via a local backend proxy (`GET /api/keepa-graph`) with `referrerpolicy="no-referrer"` fallback, eliminating `localhost` WAF 403 blocks and ad-blocker interruptions.
 - 🛡️ **Cryptographic TLS Stealth Engine**: Built on `curl_cffi` with Chrome TLS/JA3/JA4 fingerprint impersonation, serialized `asyncio.Semaphore(1)` concurrency gating, dynamic desktop header rotation, and exponential backoff retry.
 - ⚡ **Asynchronous SQLite Cache**: SHA-256 parameterized query caching with a 30-minute TTL to slash redundant Amazon requests by 80%+.
 - 🎨 **Glassmorphic Dark UI**: Zero-framework Vanilla JS (ES6+) and modern CSS3 interface featuring skeleton loading states, active tab transitions, and `AbortController` cancellation for rapid navigation without race conditions.
@@ -200,6 +200,20 @@ Lists all supported browse nodes for curated top deals.
 
 ---
 
+### 4. Keepa Price History Graph Proxy
+Proxies Keepa's 365-day price trend PNG directly with server-side Amazon referer headers, bypassing Cloudflare WAF `localhost` blocks, CORS restrictions, and client-side ad-blockers.
+
+- **Endpoint**: `GET /api/keepa-graph`
+- **Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `asin` | string | **Yes** | — | 10-character Amazon ASIN |
+  | `range` | integer | No | `365` | Price history range in days (1–1000) |
+
+- **Response**: Binary image stream (`image/png`) with `Cache-Control: public, max-age=3600`
+
+---
+
 ## 💻 Tech Stack & Requirements
 
 | Layer | Technology | Version | Purpose |
@@ -321,11 +335,12 @@ DealFinderAmazonPy/
 │   ├── style.css               # Glassmorphism styling, responsive CSS grid, animations
 │   └── app.js                  # Tab controller, category pills, Keepa chart toggles & XSS guard
 │
-├── tests/                      # Pytest automated test suite (39 tests)
+├── tests/                      # Pytest automated test suite (43 tests)
 │   ├── test_cache.py
 │   ├── test_category_url.py
 │   ├── test_deal_score.py
 │   ├── test_engine.py
+│   ├── test_keepa_proxy.py
 │   ├── test_main.py
 │   ├── test_parser.py
 │   ├── test_search_category_deals.py

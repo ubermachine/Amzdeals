@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}
                     <div class="keepa-graph-container">
                         <div class="keepa-loading">Loading graph...</div>
-                        <img alt="Price History Graph" class="keepa-img" style="display:none;" />
+                        <img alt="Price History Graph" class="keepa-img" referrerpolicy="no-referrer" style="display:none;" />
                     </div>
                 </div>
             `;
@@ -277,15 +277,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         if (!img.getAttribute('src')) {
                             const asin = keepaBtn.getAttribute('data-asin');
-                            img.setAttribute('src', `https://graph.keepa.com/pricehistory?asin=${asin}&domain=10&range=365`);
+                            const proxyUrl = `/api/keepa-graph?asin=${encodeURIComponent(asin)}&range=365`;
+                            const directUrl = `https://graph.keepa.com/pricehistory?asin=${encodeURIComponent(asin)}&domain=10&range=365`;
+
+                            img.referrerPolicy = 'no-referrer';
+                            let hasFallbackRun = false;
+
                             img.onload = () => {
                                 loading.style.display = 'none';
                                 img.style.display = 'block';
                             };
+
                             img.onerror = () => {
-                                loading.textContent = 'Failed to load graph';
-                                loading.style.color = '#ef233c';
+                                if (!hasFallbackRun) {
+                                    hasFallbackRun = true;
+                                    img.setAttribute('src', directUrl);
+                                } else {
+                                    loading.textContent = 'Price history unavailable for this product';
+                                    loading.style.color = '#ef233c';
+                                }
                             };
+
+                            img.setAttribute('src', proxyUrl);
                         }
                     }
                 });

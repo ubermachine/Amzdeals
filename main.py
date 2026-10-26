@@ -1,12 +1,16 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
 from cache.sqlite_cache import SearchCache
 from scraper.engine import search_deals, search_category_deals
+
+logger = logging.getLogger(__name__)
 
 # Ensure static directory exists to prevent FastAPI mount from crashing
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -33,6 +37,29 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Amazon.in Deal Finder API", lifespan=lifespan)
+
+
+async def fetch_keepa_graph(asin: str, range_days: int = 365) -> bytes | None:
+    """Fetch Keepa price history graph image for an Amazon.in ASIN.
+
+    Uses authentic browser headers (including Amazon.in referer) to bypass Keepa WAF.
+    """
+    url = f"https://graph.keepa.com/pricehistory?asin={asin}&domain=10&range={range_days}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": "https://www.amazon.in/",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200 and resp.content:
+                return resp.content
+            return None
+    except Exception as e:
+        logger.warning("Failed to fetch Keepa graph for ASIN %s: %s", asin, e)
+        return None
+
 
 @app.get("/api/search")
 async def api_search(
@@ -90,6 +117,25 @@ async def api_top_deals(
         cache=_cache,
     )
     return result
+
+
+@app.get("/api/keepa-graph")
+async def api_keepa_graph(
+    asin: str = Query(..., min_length=10, max_length=10, pattern=r"^[A-Za-z0-9]{10}$", description="10-character Amazon ASIN"),
+    range: int = Query(365, ge=1, le=1000, description="Price history range in days"),
+):
+    """Proxy Keepa price history graph to bypass CORS, localhost referer blocks, and ad blockers."""
+    content = await fetch_keepa_graph(asin=asin, range_days=range)
+    if not content:
+        raise HTTPException(status_code=502, detail="Failed to load price history graph from Keepa.")
+    return Response(
+        content=content,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 # Mount static files at root
