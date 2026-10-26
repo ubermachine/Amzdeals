@@ -10,8 +10,15 @@ def test_build_category_url_basic():
     assert "amazon.in/s" in url
     assert "rh=n%3A976419031" in url  # URL-encoded rh=n:976419031
     assert "pct-off=40-90" in url
-    assert "s=discount-percent-rank" in url
+    assert "s=popularity-rank" in url
     assert "page=1" in url
+
+
+def test_build_category_url_sort_options():
+    assert "s=popularity-rank" in build_category_url("976419031", 40, 90, 1, sort_by="popularity")
+    assert "s=discount-percent-rank" in build_category_url("976419031", 40, 90, 1, sort_by="discount")
+    assert "s=review-rank" in build_category_url("976419031", 40, 90, 1, sort_by="reviews")
+    assert "s=discount-percent-rank" in build_category_url("976419031", 40, 90, 1, sort_by="deal_score")
 
 
 def test_build_category_url_page_2():

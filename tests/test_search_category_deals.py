@@ -20,6 +20,12 @@ def test_category_cache_key_differs_by_node():
     assert key1 != key2
 
 
+def test_category_cache_key_differs_by_sort():
+    key1 = make_category_cache_key("976419031", 40, 90, sort_by="popularity")
+    key2 = make_category_cache_key("976419031", 40, 90, sort_by="deal_score")
+    assert key1 != key2
+
+
 MOCK_HTML = """
 <div data-component-type="s-search-result" data-asin="B002">
   <h2><a class="a-link-normal" href="/dp/B002">
@@ -45,7 +51,7 @@ MOCK_HTML = """
 
 
 @pytest.mark.asyncio
-async def test_search_category_deals_returns_scored_products():
+async def test_search_category_deals_popularity_default():
     mock_cache = AsyncMock()
     mock_cache.get = AsyncMock(return_value=None)
     mock_cache.set = AsyncMock()
@@ -64,14 +70,61 @@ async def test_search_category_deals_returns_scored_products():
 
     assert result["category"] == "Electronics"
     assert result["node"] == "976419031"
-    assert len(result["products"]) > 0
-    # Every product should have deal_score
+    assert len(result["products"]) == 2
+    # Both products have deal_score
     for p in result["products"]:
         assert "deal_score" in p
         assert isinstance(p["deal_score"], int)
-    # Products should be sorted by deal_score descending
+    # Default is popularity, preserving scraped order B002 then B001
+    assert result["products"][0]["asin"] == "B002"
+    assert result["products"][1]["asin"] == "B001"
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_deal_score_sort():
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = MOCK_HTML
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+            sort_by="deal_score",
+        )
+
     scores = [p["deal_score"] for p in result["products"]]
     assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_reviews_sort():
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = MOCK_HTML
+
+        result = await search_category_deals(
+            node="976419031",
+            category_name="Electronics",
+            min_discount=40,
+            max_discount=90,
+            cache=mock_cache,
+            sort_by="reviews",
+        )
+
+    reviews = [p["review_count"] for p in result["products"]]
+    assert reviews == sorted(reviews, reverse=True)
+    assert result["products"][0]["asin"] == "B001"  # 1543 reviews vs 500
 
 
 @pytest.mark.asyncio
@@ -80,7 +133,6 @@ async def test_search_category_deals_deduplicates_asins():
     mock_cache.get = AsyncMock(return_value=None)
     mock_cache.set = AsyncMock()
 
-    # Return same HTML for all pages → duplicate ASINs
     with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
          patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
         mock_fetch.return_value = MOCK_HTML
@@ -145,4 +197,3 @@ async def test_search_category_deals_all_fetches_fail_no_cache():
     assert result["total_results"] == 0
     assert result["cached"] is False
     mock_cache.set.assert_not_called()
-

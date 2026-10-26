@@ -73,7 +73,7 @@ def build_search_url(
 
 
 def build_category_url(
-    node: str, min_discount: int, max_discount: int, page: int
+    node: str, min_discount: int, max_discount: int, page: int, sort_by: str = "popularity"
 ) -> str:
     """Construct an Amazon.in category browse URL with discount filters.
 
@@ -82,14 +82,22 @@ def build_category_url(
         min_discount: Minimum discount percentage.
         max_discount: Maximum discount percentage.
         page: Page number (1-indexed).
+        sort_by: Sort mode ('popularity', 'discount', 'reviews', 'deal_score').
 
     Returns:
         Full Amazon.in browse-node URL string.
     """
+    amazon_sort_map = {
+        "popularity": "popularity-rank",
+        "discount": "discount-percent-rank",
+        "reviews": "review-rank",
+        "deal_score": "discount-percent-rank",
+    }
+    amazon_sort = amazon_sort_map.get(sort_by, "popularity-rank")
     params = {
         "rh": f"n:{node}",
         "pct-off": f"{min_discount}-{max_discount}",
-        "s": "discount-percent-rank",
+        "s": amazon_sort,
         "page": page,
     }
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
@@ -137,6 +145,7 @@ async def search_category_deals(
     min_discount: int,
     max_discount: int,
     cache: SearchCache,
+    sort_by: str = "popularity",
 ) -> dict:
     """Fetch top deals for a category by browse-node, score, and rank.
 
@@ -149,11 +158,12 @@ async def search_category_deals(
         min_discount: Minimum discount percentage.
         max_discount: Maximum discount percentage.
         cache: SearchCache instance.
+        sort_by: Sort mode ('popularity', 'deal_score', 'discount', 'reviews').
 
     Returns:
         Dict with keys: category, node, products, total_results, cached.
     """
-    cache_key = make_category_cache_key(node, min_discount, max_discount)
+    cache_key = make_category_cache_key(node, min_discount, max_discount, sort_by=sort_by)
 
     # Check cache first
     cached = await cache.get(cache_key)
@@ -171,7 +181,7 @@ async def search_category_deals(
         delay = random.uniform(config.THROTTLE_MIN, config.THROTTLE_MAX)
         await asyncio.sleep(delay)
 
-        url = build_category_url(node, min_discount, max_discount, page_num)
+        url = build_category_url(node, min_discount, max_discount, page_num, sort_by=sort_by)
         html = await _fetch_with_retry(url)
 
         if html is None:
@@ -203,7 +213,14 @@ async def search_category_deals(
     for p in all_products:
         p["deal_score"] = compute_deal_score(p)
 
-    all_products.sort(key=lambda p: p["deal_score"], reverse=True)
+    if sort_by == "deal_score":
+        all_products.sort(key=lambda p: p["deal_score"], reverse=True)
+    elif sort_by == "discount":
+        all_products.sort(key=lambda p: p.get("discount_pct") or 0, reverse=True)
+    elif sort_by == "reviews":
+        all_products.sort(key=lambda p: p.get("review_count") or 0, reverse=True)
+    # When sort_by == "popularity", keep Amazon's scraped order (already bestseller popularity ranked)
+
     top_products = all_products[: config.TOP_DEALS_LIMIT]
 
     result = {
