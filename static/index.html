@@ -70,8 +70,22 @@
 
             <!-- Tab 2: Top Deals by Category -->
             <div class="tab-pane" id="tab-top-deals">
-                <div class="category-pill-bar" id="category-pill-bar">
-                    <!-- Category pills injected by JS -->
+                <div class="top-deals-controls glass-panel">
+                    <div class="category-pill-bar" id="category-pill-bar">
+                        <!-- Category pills injected by JS -->
+                    </div>
+                    <div class="top-deals-filter-bar">
+                        <div class="sort-wrapper">
+                            <label for="top-deals-sort">Sort by:</label>
+                            <select id="top-deals-sort" class="sort-select">
+                                <option value="popularity" selected>🔥 Most Popular</option>
+                                <option value="deal_score">🏆 Deal Score</option>
+                                <option value="discount">💰 Highest Discount</option>
+                                <option value="reviews">⭐ Most Reviewed</option>
+                            </select>
+                        </div>
+                        <span id="top-deals-count" class="deals-count-badge hidden"></span>
+                    </div>
                 </div>
                 <div id="top-deals-error" class="error hidden"></div>
                 <div id="top-deals-skeleton" class="product-grid hidden">

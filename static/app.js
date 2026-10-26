@@ -17,9 +17,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const topDealsGrid = document.getElementById('top-deals-grid');
     const topDealsSkeleton = document.getElementById('top-deals-skeleton');
     const topDealsError = document.getElementById('top-deals-error');
+    const topDealsSort = document.getElementById('top-deals-sort');
+    const topDealsCount = document.getElementById('top-deals-count');
 
     let topDealsInitialized = false;
     let currentAbortController = null;
+    let currentCategoryNode = null;
+    let currentCategoryName = null;
+    let currentSortBy = 'popularity';
+
+    if (topDealsSort) {
+        topDealsSort.addEventListener('change', (e) => {
+            currentSortBy = e.target.value;
+            if (currentCategoryNode) {
+                fetchCategoryDeals(currentCategoryNode, currentCategoryName, currentSortBy);
+            }
+        });
+    }
 
     // ─── Tab Switching ───
     tabBtns.forEach((btn, index) => {
@@ -83,7 +97,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ─── Fetch Category Deals ───
-    async function fetchCategoryDeals(node, name) {
+    async function fetchCategoryDeals(node, name, sortBy = currentSortBy) {
+        currentCategoryNode = node;
+        currentCategoryName = name;
+        currentSortBy = sortBy;
+
         // Abort previous request
         if (currentAbortController) {
             currentAbortController.abort();
@@ -95,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         topDealsSkeleton.classList.remove('hidden');
         topDealsGrid.innerHTML = '';
         topDealsError.classList.add('hidden');
+        if (topDealsCount) topDealsCount.classList.add('hidden');
 
         // Mark pill as loading
         document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('loading'));
@@ -103,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const resp = await fetch(
-                `/api/top-deals?category=${encodeURIComponent(node)}`,
+                `/api/top-deals?category=${encodeURIComponent(node)}&sort_by=${encodeURIComponent(sortBy)}`,
                 { signal: currentAbortController.signal }
             );
 
@@ -119,6 +138,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 topDealsError.classList.remove('hidden');
             } else {
                 renderProducts(data.products, topDealsGrid, true);
+                if (topDealsCount && data.products) {
+                    topDealsCount.textContent = `Showing ${data.products.length} Deals`;
+                    topDealsCount.classList.remove('hidden');
+                }
             }
         } catch (err) {
             if (err.name !== 'AbortError') {
