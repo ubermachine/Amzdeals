@@ -8,9 +8,11 @@ import aiosqlite
 import config
 
 
-def make_cache_key(query: str, min_discount: int, max_discount: int, page: int) -> str:
+def make_cache_key(
+    query: str, min_discount: int, max_discount: int, page: int, sort_by: str = "bestsellers"
+) -> str:
     """Generate a deterministic SHA256 cache key from search parameters."""
-    raw = f"{query.lower().strip()}:{min_discount}:{max_discount}:{page}"
+    raw = f"{query.lower().strip()}:{min_discount}:{max_discount}:{page}:{sort_by}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

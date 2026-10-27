@@ -47,58 +47,112 @@ async def _get_session() -> requests.AsyncSession:
     return _session
 
 
+# ─── Discount Tiers & Refinement Nodes ───────────────────────────────
+
+# Universal Amazon.in discount refinement taxonomy nodes
+DISCOUNT_TIERS = [
+    (70, "27060457031"),  # 70% Off or more
+    (60, "27060456031"),  # 60% Off or more
+    (50, "2665401031"),   # 50% Off or more
+    (35, "2665402031"),   # 35% Off or more
+    (25, "2665400031"),   # 25% Off or more
+    (10, "2665399031"),   # 10% Off or more
+]
+
+
+def get_discount_tier_node(min_discount: int) -> str | None:
+    """Return the Amazon.in taxonomical discount refinement node for min_discount.
+
+    Maps min_discount down to the highest tier threshold <= min_discount.
+    For example, 40% maps to the 35% tier ('2665402031').
+    Returns None if min_discount < 10.
+    """
+    for threshold, node_id in DISCOUNT_TIERS:
+        if min_discount >= threshold:
+            return node_id
+    return None
+
+
 # ─── URL builders ────────────────────────────────────────────────────
 
 
 def build_search_url(
-    query: str, min_discount: int, max_discount: int, page: int
+    query: str,
+    min_discount: int,
+    max_discount: int,
+    page: int,
+    sort_by: str = "bestsellers",
 ) -> str:
-    """Construct an Amazon.in search URL with discount filters.
+    """Construct an Amazon.in search URL with taxonomical discount filters.
 
     Args:
-        query: Search term (e.g. "Perfume").
+        query: Search term (e.g. "Perfume", "laptops").
         min_discount: Minimum discount percentage (e.g. 40).
         max_discount: Maximum discount percentage (e.g. 90).
         page: Page number (1-indexed).
+        sort_by: Sort mode ('bestsellers', 'popularity', 'reviews', 'featured').
 
     Returns:
         Full Amazon.in search URL string.
     """
+    amazon_sort_map = {
+        "bestsellers": "exact-aware-popularity-rank",
+        "popularity": "exact-aware-popularity-rank",
+        "reviews": "review-rank",
+        "featured": "relevanceblender",
+        "price_asc": "price-asc-rank",
+        "price_desc": "price-desc-rank",
+    }
+    amazon_sort = amazon_sort_map.get(sort_by, "exact-aware-popularity-rank")
+
     params = {
         "k": query,
-        "pct-off": f"{min_discount}-{max_discount}",
-        "s": "discount-percent-rank",
+        "s": amazon_sort,
         "page": page,
     }
+
+    tier_node = get_discount_tier_node(min_discount)
+    if tier_node:
+        params["rh"] = f"p_n_pct-off-with-tax:{tier_node}"
+
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
 
 
 def build_category_url(
-    node: str, min_discount: int, max_discount: int, page: int, sort_by: str = "popularity"
+    node: str,
+    min_discount: int,
+    max_discount: int,
+    page: int,
+    sort_by: str = "popularity",
 ) -> str:
-    """Construct an Amazon.in category browse URL with discount filters.
+    """Construct an Amazon.in category browse URL with taxonomical discount filters.
 
     Args:
         node: Amazon browse-node ID (e.g. "976419031" for Electronics).
         min_discount: Minimum discount percentage.
         max_discount: Maximum discount percentage.
         page: Page number (1-indexed).
-        sort_by: Sort mode ('popularity', 'discount', 'reviews', 'deal_score').
+        sort_by: Sort mode ('popularity', 'bestsellers', 'discount', 'reviews', 'deal_score').
 
     Returns:
         Full Amazon.in browse-node URL string.
     """
     amazon_sort_map = {
         "popularity": "popularity-rank",
-        "bestsellers": "popularity-rank",
-        "discount": "discount-percent-rank",
+        "bestsellers": "exact-aware-popularity-rank",
+        "discount": "popularity-rank",
         "reviews": "review-rank",
-        "deal_score": "discount-percent-rank",
+        "deal_score": "popularity-rank",
     }
     amazon_sort = amazon_sort_map.get(sort_by, "popularity-rank")
+
+    rh_parts = [f"n:{node}"]
+    tier_node = get_discount_tier_node(min_discount)
+    if tier_node:
+        rh_parts.append(f"p_n_pct-off-with-tax:{tier_node}")
+
     params = {
-        "rh": f"n:{node}",
-        "pct-off": f"{min_discount}-{max_discount}",
+        "rh": ",".join(rh_parts),
         "s": amazon_sort,
         "page": page,
     }
@@ -295,16 +349,26 @@ async def _fetch_with_retry(url: str) -> str | None:
                     or "<title>robot check</title>" in lower_text
                     or ("robot check" in lower_text and "amazon" in lower_text)
                     or "enter the characters you see below" in lower_text
+                    or "bm-verify=" in lower_text
                 )
                 if is_captcha:
                     logger.warning(
-                        "CAPTCHA detected on attempt %d/%d",
+                        "Bot challenge / CAPTCHA detected on attempt %d/%d",
                         attempt + 1,
                         config.MAX_RETRIES,
                     )
+                    # Reset session so retry gets a fresh connection & cookie state
+                    global _session
+                    if _session is not None:
+                        try:
+                            await _session.close()
+                        except Exception:
+                            pass
+                        _session = None
                     if attempt < config.MAX_RETRIES - 1:
                         wait = config.BACKOFF_BASE ** (attempt + 1)
                         await asyncio.sleep(wait)
+                        session = await _get_session()
                         continue
                     return None
 
@@ -335,6 +399,7 @@ async def search_deals(
     max_discount: int,
     page: int,
     cache: SearchCache,
+    sort_by: str = "bestsellers",
 ) -> dict:
     """Search for deals on Amazon.in with caching.
 
@@ -344,11 +409,12 @@ async def search_deals(
         max_discount: Maximum discount percentage.
         page: Page number.
         cache: SearchCache instance.
+        sort_by: Sort mode ('bestsellers', 'popularity', 'reviews', 'featured').
 
     Returns:
         Dict with keys: query, page, products, total_results, cached.
     """
-    cache_key = make_cache_key(query, min_discount, max_discount, page)
+    cache_key = make_cache_key(query, min_discount, max_discount, page, sort_by=sort_by)
 
     # Check cache first
     cached = await cache.get(cache_key)
@@ -361,7 +427,7 @@ async def search_deals(
     await asyncio.sleep(delay)
 
     # Fetch from Amazon
-    url = build_search_url(query, min_discount, max_discount, page)
+    url = build_search_url(query, min_discount, max_discount, page, sort_by=sort_by)
     html = await _fetch_with_retry(url)
 
     if html is None:

@@ -14,14 +14,31 @@ def test_build_search_url_basic():
     url = build_search_url("Perfume", 40, 90, 1)
     assert "amazon.in" in url
     assert "k=Perfume" in url or "k=perfume" in url.lower()
-    assert "pct-off=40-90" in url
+    # 40% maps to 35% tier: 2665402031
+    assert "rh=p_n_pct-off-with-tax%3A2665402031" in url
+    assert "s=exact-aware-popularity-rank" in url
     assert "page=1" in url
+    assert "pct-off=" not in url  # Zero redirects: avoids legacy pct-off query param
 
 
 def test_build_search_url_page_2():
     url = build_search_url("Laptop", 50, 80, 2)
     assert "page=2" in url
-    assert "pct-off=50-80" in url
+    # 50% maps to 50% tier: 2665401031
+    assert "rh=p_n_pct-off-with-tax%3A2665401031" in url
+
+
+def test_build_search_url_sort_options():
+    url_reviews = build_search_url("Laptop", 50, 80, 1, sort_by="reviews")
+    assert "s=review-rank" in url_reviews
+
+    url_featured = build_search_url("Laptop", 50, 80, 1, sort_by="featured")
+    assert "s=relevanceblender" in url_featured
+
+
+def test_build_search_url_zero_discount():
+    url = build_search_url("Laptop", 0, 80, 1)
+    assert "p_n_pct-off-with-tax" not in url
 
 
 @pytest.mark.asyncio

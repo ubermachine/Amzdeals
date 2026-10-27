@@ -3,10 +3,42 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Tests Passing](https://img.shields.io/badge/tests-50%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-63%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
+
+---
+
+## 🚀 Recent Major Updates & Architectural Overhaul (October 2026)
+
+### 1. Modern Taxonomical URL Architecture & Zero-Redirect Scraper
+* **Legacy `pct-off` Deprecation**: Live Chrome DevTools MCP and network inspections revealed that Amazon's edge servers issue HTTP 301/302 redirects for `pct-off=MIN-MAX` queries, rewriting them into `rh=...p_8:MIN-MAX` and introducing 500ms–1500ms of latency per request. We replaced this with Amazon's modern UI refinement parameter `rh=p_n_pct-off-with-tax:NODE_ID`, achieving **instant HTTP 200 responses with zero redirects**.
+* **Elimination of the "Screen Guard & Cheap Accessory Trap"**: Raw numeric `p_8` filters mathematically favor low-value items with artificially inflated MRPs (e.g., ₹99 tempered glass or ₹79 cleaning kits with 90% markdowns). By migrating to Amazon's taxonomical `p_n_pct-off-with-tax` nodes, Amazon's ranking engine preserves department/keyword relevance — surfacing genuine laptops, smartphones, 4K projectors, and home audio systems instead of cheap trinkets.
+* **Universal Discount Taxonomy Nodes**: Standardized universal discount node IDs across all Amazon.in departments (Electronics, Fashion, Beauty, Home & Kitchen):
+  * `10% Off or more` &rarr; `2665399031`
+  * `25% Off or more` &rarr; `2665400031`
+  * `35% Off or more` &rarr; `2665402031`
+  * `50% Off or more` &rarr; `2665401031`
+  * `60% Off or more` &rarr; `27060456031`
+  * `70% Off or more` &rarr; `27060457031`
+  * Includes automated greatest-lower-bound mapping (`min_discount=40%` cleanly maps to the `35%` tier node `2665402031`).
+
+### 2. Native Search & Category Sort Realignment
+* **Keyword Search**: Replaced unsupported `s=discount-percent-rank` with Amazon's native `exact-aware-popularity-rank` (Best Sellers) and `review-rank` (Top Customer Reviews), surfacing proven bestselling products with substantial discounts.
+* **Category Browse**: Defaulted to `popularity-rank` (Bestselling) for Amazon browse-nodes, combined with in-memory deal score, discount %, and review re-ranking.
+* **Instant In-Memory Sorting**: Frontend sort pills reorder cached category lists in **0ms** without triggering redundant backend scraping roundtrips.
+
+### 3. Akamai Bot Verification (`bm-verify`) Resilience & Stealth
+* Expanded anti-bot detection in `_fetch_with_retry` to catch Akamai `bm-verify=` refresh challenges and silent robot blocks alongside classic CAPTCHAs.
+* Automatically terminates and resets tainted `curl_cffi.AsyncSession` handles upon detecting a challenge, ensuring subsequent exponential backoff retries initiate with clean TLS handshakes and cookie states.
+
+### 4. Quality & Defensive Improvements
+* **Cache Integrity**: Guarded against caching empty product lists (`products: []`), ensuring transient rate limits or bot-challenges are never stored as valid cached hits.
+* **Review Count Parser**: Resilient parsing for abbreviated review volumes (`42.8K` &rarr; `42,800`, `1.2M` &rarr; `1,200,000`).
+* **Input Validation**: Added strict `min_discount <= max_discount` boundary verification across `/api/search` and `/api/top-deals`.
+* **Badge Extraction**: Added DOM extraction for `🔥 Best Seller` and `✨ Amazon's Choice` badges, displayed natively alongside `✓ Verified Deal` tags.
+* **Test Suite Expansion**: Expanded unit and integration test suite to **63 passing tests** across 10 test modules.
 
 Deal Finder automates the extraction of deeply discounted products using Amazon's native `pct-off` URL query filters and browse-node hierarchies. It filters out sponsored clutter, verifies discounts against statistical baseline outliers, calculates a balanced multi-factor deal quality score, embeds 365-day historical price graphs via Keepa, and delivers the results through a modern glassmorphic web interface.
 

@@ -67,6 +67,7 @@ async def api_search(
     min_discount: int = Query(10, ge=0, le=99, description="Minimum discount %"),
     max_discount: int = Query(99, ge=1, le=100, description="Maximum discount %"),
     page: int = Query(1, ge=1, le=100, description="Page number"),
+    sort_by: str = Query("bestsellers", description="Sort order: bestsellers, popularity, reviews, featured"),
 ):
     """Search for deals on Amazon.in."""
     if min_discount > max_discount:
@@ -83,6 +84,7 @@ async def api_search(
         max_discount=max_discount,
         page=page,
         cache=_cache,
+        sort_by=sort_by,
     )
     return result
 
