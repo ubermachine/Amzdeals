@@ -47,7 +47,7 @@ Deal Finder automates the extraction of deeply discounted products using Amazon'
 ## 🌟 Key Features
 
 - 🔍 **Targeted Discount Range Search**: Query any product keyword (e.g. *Mechanical Keyboard*, *Perfume*, *Air Fryer*) and filter with precise discount windows (e.g., 40%–90%).
-- 🏆 **Top Deals by Category (Top 100 & Popularity Sort)**: Automated multi-page scraping across 10 core Amazon.in categories, delivering up to 100 products per category with multi-mode sorting (defaulting to Amazon's native Bestsellers / Popularity ranking, alongside Deal Score, Discount %, and Reviews).
+- 🏆 **Top Deals by Category (Top 100 & Popularity Sort)**: Automated multi-page scraping across 18 curated, high-ROI deal niches (e.g. Laptops, Smartphones, Headphones, Smartwatches, Shoes, Watches, Luggage, Kitchen Appliances, Perfumes), delivering up to 100 products per category with multi-mode sorting (defaulting to Amazon's native Bestsellers / Popularity ranking, alongside Deal Score, Discount %, and Reviews).
 - 🧠 **Statistical Outlier Verification (`is_true_deal`)**: Weeds out artificial MRP markups and baseline discounts by verifying that a product's discount is both $\ge 40\%$ and at least $10\%$ above the category/search median.
 - 📊 **Multi-Factor Deal Quality Score (`deal_score`)**: Proprietary 0–100 score ranking products by balancing discount depth (60%), customer review rating (25%), and review volume (15%, capped at 5,000).
 - 📈 **Integrated Keepa Price History Graphs**: 1-click embedded 365-day price history charts via a local backend proxy (`GET /api/keepa-graph`) with `referrerpolicy="no-referrer"` fallback, eliminating `localhost` WAF 403 blocks and ad-blocker interruptions.
@@ -213,22 +213,22 @@ Fetches, deduplicates, and ranks deals for a specific Amazon browse-node across 
 ---
 
 ### 3. Browse Categories
-Lists all supported browse nodes for curated top deals.
+Lists all supported browse nodes for curated top deals (18 specific high-intent, high-commission deal categories).
 
 - **Endpoint**: `GET /api/categories`
 - **Sample Response**:
   ```json
   [
-    {"name": "Electronics", "node": "976419031"},
-    {"name": "Fashion", "node": "1571271031"},
-    {"name": "Beauty", "node": "1355016031"},
-    {"name": "Home & Kitchen", "node": "976442031"},
-    {"name": "Books", "node": "976389031"},
-    {"name": "Sports", "node": "1984443031"},
-    {"name": "Toys", "node": "1350380031"},
-    {"name": "Computers", "node": "976392031"},
-    {"name": "Mobile Phones", "node": "1389401031"},
-    {"name": "Grocery", "node": "2454178031"}
+    {"name": "Laptops", "node": "1375424031", "icon": "💻"},
+    {"name": "Smartphones", "node": "1805560031", "icon": "📱"},
+    {"name": "Headphones & Earbuds", "node": "29561348031", "icon": "🎧"},
+    {"name": "Smartwatches", "node": "11599648031", "icon": "⌚"},
+    {"name": "Shoes & Sneakers", "node": "1983518031", "icon": "👟"},
+    {"name": "Watches", "node": "1350387031", "icon": "⌚"},
+    {"name": "Luggage & Backpacks", "node": "2917436031", "icon": "🎒"},
+    {"name": "Perfumes & Fragrances", "node": "1374298031", "icon": "🌸"},
+    {"name": "Kitchen Appliances", "node": "4951860031", "icon": "🍳"},
+    {"name": "Cookware & Dining", "node": "5925789031", "icon": "🍽️"}
   ]
   ```
 

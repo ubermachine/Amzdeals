@@ -15,9 +15,10 @@ async def test_categories_returns_all_categories():
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert len(data) == 10
-    assert data[0]["name"] == "Electronics"
+    assert len(data) == 18
+    assert data[0]["name"] == "Laptops"
     assert "node" in data[0]
+    assert "icon" in data[0]
 
 
 @pytest.mark.asyncio

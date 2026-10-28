@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         categories.forEach((cat, idx) => {
             const pill = document.createElement('button');
             pill.className = 'category-pill' + (idx === 0 ? ' active' : '');
-            pill.textContent = cat.name;
+            pill.textContent = cat.icon ? `${cat.icon} ${cat.name}` : cat.name;
             pill.setAttribute('data-node', cat.node);
             pill.setAttribute('data-name', cat.name);
             pill.addEventListener('click', () => {
