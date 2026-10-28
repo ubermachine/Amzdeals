@@ -2,7 +2,7 @@ import asyncio
 import os
 import time
 import pytest
-from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
+from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key, make_flipkart_cache_key
 
 TEST_DB = "test_cache.db"
 
@@ -65,3 +65,22 @@ def test_cache_expired_returns_none(cache):
     time.sleep(0.1)
     result = loop.run_until_complete(cache.get("expkey"))
     assert result is None
+
+
+def test_make_flipkart_cache_key():
+    k1 = make_flipkart_cache_key("B0123", "ASUS TUF A15")
+    k2 = make_flipkart_cache_key("B0123", "ASUS TUF A15")
+    k3 = make_flipkart_cache_key("B0999", "ASUS TUF A15")
+    assert k1 == k2
+    assert k1 != k3
+
+
+def test_flipkart_cache_set_and_get(cache):
+    loop = asyncio.get_event_loop()
+    data = {"flipkart_price": 96990, "verdict": "cheaper_on_flipkart", "match_confidence": 95.0}
+    loop.run_until_complete(cache.set_flipkart("fk_test_key", data))
+    result = loop.run_until_complete(cache.get_flipkart("fk_test_key"))
+    assert result is not None
+    assert result["flipkart_price"] == 96990
+    assert result["verdict"] == "cheaper_on_flipkart"
+

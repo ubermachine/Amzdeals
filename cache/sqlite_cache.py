@@ -22,6 +22,12 @@ def make_category_cache_key(node: str, min_discount: int, max_discount: int, sor
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def make_flipkart_cache_key(asin: str, title: str = "") -> str:
+    """Generate a deterministic SHA256 cache key for Flipkart cross-market lookups."""
+    raw = f"fk:{asin}:{title.lower().strip()[:60]}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 
 class SearchCache:
     """Async SQLite cache for Amazon search results."""
@@ -31,11 +37,20 @@ class SearchCache:
         self._db: aiosqlite.Connection | None = None
 
     async def init(self) -> None:
-        """Create the cache table if it doesn't exist."""
+        """Create the cache tables if they don't exist."""
         self._db = await aiosqlite.connect(self._db_path)
         await self._db.execute(
             """
             CREATE TABLE IF NOT EXISTS search_cache (
+                key TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        await self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS flipkart_cache (
                 key TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
                 created_at REAL NOT NULL
@@ -86,6 +101,35 @@ class SearchCache:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO search_cache (key, data, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (key, json.dumps(data), created_at),
+        )
+        await self._db.commit()
+
+    async def get_flipkart(self, key: str, ttl: int = 21600) -> dict | None:
+        """Retrieve cached Flipkart match data (default 6h TTL)."""
+        async with self._db.execute(
+            "SELECT data, created_at FROM flipkart_cache WHERE key = ?", (key,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            data_json, created_at = row
+            if time.time() - created_at > ttl:
+                await self._db.execute(
+                    "DELETE FROM flipkart_cache WHERE key = ?", (key,)
+                )
+                await self._db.commit()
+                return None
+            return json.loads(data_json)
+
+    async def set_flipkart(self, key: str, data: dict) -> None:
+        """Store Flipkart match data in the cache."""
+        created_at = time.time()
+        await self._db.execute(
+            """
+            INSERT OR REPLACE INTO flipkart_cache (key, data, created_at)
             VALUES (?, ?, ?)
             """,
             (key, json.dumps(data), created_at),

@@ -409,6 +409,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.classList.add('true-deal');
             }
 
+            // Cross-market Flipkart badge
+            let flipkartBadge = '';
+            if (product.cross_market && product.cross_market.match_found) {
+                const cm = product.cross_market;
+                const fkPriceFormatted = cm.flipkart_price ? `₹${Math.round(cm.flipkart_price).toLocaleString('en-IN')}` : '';
+                const diffFormatted = cm.price_diff ? `₹${Math.round(cm.price_diff).toLocaleString('en-IN')}` : '';
+                const savingsFormatted = cm.flipkart_savings ? `₹${Math.round(cm.flipkart_savings).toLocaleString('en-IN')}` : '';
+                const fkUrl = cm.flipkart_url || '#';
+
+                if (cm.verdict === 'true_deal') {
+                    flipkartBadge = `
+                        <a href="${escapeHtml(fkUrl)}" target="_blank" rel="noopener noreferrer" class="flipkart-badge fk-deal" title="Flipkart price: ${fkPriceFormatted} (Confidence: ${cm.match_confidence}%)">
+                            <span class="fk-icon">⚡</span> Best Price: ${diffFormatted} cheaper than Flipkart ↗
+                        </a>
+                    `;
+                } else if (cm.verdict === 'market_parity') {
+                    flipkartBadge = `
+                        <a href="${escapeHtml(fkUrl)}" target="_blank" rel="noopener noreferrer" class="flipkart-badge fk-parity" title="Flipkart price: ${fkPriceFormatted} (Within ±5% market parity)">
+                            <span class="fk-icon">⚖️</span> Market Parity (${fkPriceFormatted} on Flipkart) ↗
+                        </a>
+                    `;
+                } else if (cm.verdict === 'cheaper_on_flipkart') {
+                    flipkartBadge = `
+                        <a href="${escapeHtml(fkUrl)}" target="_blank" rel="noopener noreferrer" class="flipkart-badge fk-cheaper" title="Amazon price is higher than Flipkart">
+                            <span class="fk-icon">⚠️</span> Cheaper on Flipkart: Save ${savingsFormatted} (${fkPriceFormatted}) ↗
+                        </a>
+                    `;
+                }
+            }
+
             // Deal score badge (only in Top Deals tab)
             let dealScoreBadge = '';
             if (showDealScore && product.deal_score != null) {
@@ -447,6 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="current-price">${currentPriceText}</span>
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
+                    ${flipkartBadge}
                     <a href="${escapeHtml(product.product_url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
                     ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}
                     <div class="keepa-graph-container">

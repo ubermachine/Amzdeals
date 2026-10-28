@@ -19,6 +19,7 @@ from curl_cffi import requests
 
 import config
 from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
+from scraper.flipkart import verify_product_against_flipkart
 from scraper.parser import parse_search_results
 from scraper.stealth import get_stealth_headers
 
@@ -303,6 +304,36 @@ async def search_category_deals(
         else:
             p["is_true_deal"] = False
         p["deal_score"] = compute_deal_score(p)
+
+    # ── Strict Category Batch: Cross-Market Flipkart Verification ──
+    candidate_deals = [p for p in all_products if p.get("is_true_deal")]
+    if candidate_deals:
+        session = await _get_session()
+        fk_semaphore = asyncio.Semaphore(2)
+
+        async def _verify_one(prod):
+            async with fk_semaphore:
+                try:
+                    fk_res = await verify_product_against_flipkart(prod, session, cache)
+                    prod["cross_market"] = fk_res
+                    verdict = fk_res.get("verdict")
+                    if verdict == "market_parity":
+                        # Within +-5% is Market Parity -> NOT a deal!
+                        prod["is_true_deal"] = False
+                        prod["deal_score"] = max(0, prod["deal_score"] - 15)
+                    elif verdict == "cheaper_on_flipkart":
+                        # Flipkart is cheaper -> Fake Deal!
+                        prod["is_true_deal"] = False
+                        prod["deal_score"] = max(0, prod["deal_score"] - 25)
+                    elif verdict == "true_deal":
+                        # Amazon is >= 5% cheaper than Flipkart -> Confirmed True Deal!
+                        prod["is_true_deal"] = True
+                        prod["deal_score"] = min(100, prod["deal_score"] + 10)
+                except Exception as e:
+                    logger.warning("Error verifying product %s on Flipkart: %s", prod.get("asin"), e)
+
+        # Batch verify top candidate deals (limit to top 15 to keep latency tight)
+        await asyncio.gather(*[_verify_one(p) for p in candidate_deals[:15]])
 
     if sort_by == "deal_score":
         all_products.sort(key=lambda p: p["deal_score"], reverse=True)

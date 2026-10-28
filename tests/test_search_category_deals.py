@@ -326,6 +326,8 @@ async def test_search_category_deals_calibrated_true_deal():
     mock_cache = AsyncMock()
     mock_cache.get = AsyncMock(return_value=None)
     mock_cache.set = AsyncMock()
+    mock_cache.get_flipkart = AsyncMock(return_value=None)
+    mock_cache.set_flipkart = AsyncMock()
 
     laptop_html = """
     <div data-component-type="s-search-result" data-asin="LAPTOP_001">
@@ -341,8 +343,10 @@ async def test_search_category_deals_calibrated_true_deal():
     """
 
     with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
-         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock), \
+         patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as mock_fk:
         mock_fetch.return_value = laptop_html
+        mock_fk.return_value = {"match_found": False, "verdict": "unverified", "is_deal": False}
 
         result = await search_category_deals(
             node="1375424031",
@@ -356,4 +360,114 @@ async def test_search_category_deals_calibrated_true_deal():
     laptop_1 = next(p for p in result["products"] if p["asin"] == "LAPTOP_001")
     assert laptop_1["discount_pct"] == 32
     assert laptop_1["is_true_deal"] is True
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_flipkart_market_parity_strips_true_deal():
+    """If an item is on Flipkart within +-5%, it ain't a deal (is_true_deal stripped)."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+    mock_cache.get_flipkart = AsyncMock(return_value=None)
+    mock_cache.set_flipkart = AsyncMock()
+
+    deal_html = """
+    <div data-component-type="s-search-result" data-asin="PHONE_DEAL">
+      <h2><a href="/dp/PHONE_DEAL"><span class="a-text-normal">Realme Narzo 60X 5G 128GB</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹11,999</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹17,999</span></span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="PHONE_REGULAR">
+      <h2><a href="/dp/PHONE_REGULAR"><span class="a-text-normal">Realme C53</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹9,999</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹10,999</span></span>
+    </div>
+    """
+
+    mock_fk_verdict = {
+        "match_found": True,
+        "verdict": "market_parity",
+        "is_deal": False,
+        "flipkart_price": 11499.0,
+        "flipkart_title": "Realme Narzo 60X 5G (128 GB)",
+        "flipkart_url": "https://www.flipkart.com/realme",
+        "match_confidence": 95.0,
+        "price_diff": 500.0,
+        "diff_pct": 4.3,
+    }
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock), \
+         patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as mock_fk_verify:
+        mock_fetch.return_value = deal_html
+        mock_fk_verify.return_value = mock_fk_verdict
+
+        result = await search_category_deals(
+            node="1805560031",
+            category_name="Smartphones",
+            min_discount=10,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    phone = next(p for p in result["products"] if p["asin"] == "PHONE_DEAL")
+    # Even though discount is 33% (well above median), market parity on Flipkart stripped is_true_deal!
+    assert phone["is_true_deal"] is False
+    assert phone["cross_market"]["verdict"] == "market_parity"
+    assert phone["cross_market"]["flipkart_price"] == 11499.0
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_flipkart_true_deal_boosts_score():
+    """If Amazon is >=5% cheaper than Flipkart, is_true_deal is kept and score boosted."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+    mock_cache.get_flipkart = AsyncMock(return_value=None)
+    mock_cache.set_flipkart = AsyncMock()
+
+    deal_html = """
+    <div data-component-type="s-search-result" data-asin="PHONE_REAL_DEAL">
+      <h2><a href="/dp/PHONE_REAL_DEAL"><span class="a-text-normal">Realme Narzo 60X 5G 128GB</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹8,999</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹17,999</span></span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="PHONE_REGULAR">
+      <h2><a href="/dp/PHONE_REGULAR"><span class="a-text-normal">Realme C53</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹9,999</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹10,999</span></span>
+    </div>
+    """
+
+    mock_fk_verdict = {
+        "match_found": True,
+        "verdict": "true_deal",
+        "is_deal": True,
+        "flipkart_price": 11499.0,
+        "flipkart_title": "Realme Narzo 60X 5G (128 GB)",
+        "flipkart_url": "https://www.flipkart.com/realme",
+        "match_confidence": 95.0,
+        "price_diff": 2500.0,
+        "diff_pct": 21.7,
+    }
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock), \
+         patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as mock_fk_verify:
+        mock_fetch.return_value = deal_html
+        mock_fk_verify.return_value = mock_fk_verdict
+
+        result = await search_category_deals(
+            node="1805560031",
+            category_name="Smartphones",
+            min_discount=10,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    phone = next(p for p in result["products"] if p["asin"] == "PHONE_REAL_DEAL")
+    assert phone["is_true_deal"] is True
+    assert phone["cross_market"]["verdict"] == "true_deal"
+    assert phone["cross_market"]["price_diff"] == 2500.0
+
 
