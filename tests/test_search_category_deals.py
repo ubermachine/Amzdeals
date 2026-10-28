@@ -280,3 +280,80 @@ async def test_search_category_deals_stops_early_when_limit_reached():
     # Should have called fetch only once because page 1 had >= 100 products
     assert mock_fetch.call_count == 1
     assert len(result["products"]) == 100
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_price_floor_filters_cheap_accessories():
+    """Smartphones category (node 1805560031) must filter out items under min_price (4500)."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    html_with_accessories = """
+    <div data-component-type="s-search-result" data-asin="CASE_001">
+      <h2><a href="/dp/CASE_001"><span class="a-text-normal">Silicone Back Cover for Phone</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹249</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹999</span></span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="PHONE_001">
+      <h2><a href="/dp/PHONE_001"><span class="a-text-normal">Realme Narzo 60X 5G</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹11,999</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹14,999</span></span>
+    </div>
+    """
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = html_with_accessories
+
+        result = await search_category_deals(
+            node="1805560031",
+            category_name="Smartphones",
+            min_discount=10,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    # CASE_001 (₹249) filtered out by min_price (4500); only PHONE_001 remains
+    assert len(result["products"]) == 1
+    assert result["products"][0]["asin"] == "PHONE_001"
+    assert result["products"][0]["current_price"] == 11999.0
+
+
+@pytest.mark.asyncio
+async def test_search_category_deals_calibrated_true_deal():
+    """Laptops category (node 1375424031) should award is_true_deal for genuine discounts (min_true_deal_pct=25)."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+
+    laptop_html = """
+    <div data-component-type="s-search-result" data-asin="LAPTOP_001">
+      <h2><a href="/dp/LAPTOP_001"><span class="a-text-normal">High End Gaming Laptop</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹34,000</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹50,000</span></span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="LAPTOP_002">
+      <h2><a href="/dp/LAPTOP_002"><span class="a-text-normal">Budget Everyday Laptop</span></a></h2>
+      <span class="a-price"><span class="a-offscreen">₹42,500</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">₹50,000</span></span>
+    </div>
+    """
+
+    with patch("scraper.engine._fetch_with_retry", new_callable=AsyncMock) as mock_fetch, \
+         patch("scraper.engine.asyncio.sleep", new_callable=AsyncMock):
+        mock_fetch.return_value = laptop_html
+
+        result = await search_category_deals(
+            node="1375424031",
+            category_name="Laptops",
+            min_discount=10,
+            max_discount=90,
+            cache=mock_cache,
+        )
+
+    # LAPTOP_001 has 32% discount (>= 25% min_true_deal_pct and >= median(23.5) + 8 = 31.5)
+    laptop_1 = next(p for p in result["products"] if p["asin"] == "LAPTOP_001")
+    assert laptop_1["discount_pct"] == 32
+    assert laptop_1["is_true_deal"] is True
+

@@ -3,7 +3,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Tests Passing](https://img.shields.io/badge/tests-63%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-66%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
@@ -38,7 +38,13 @@ An asynchronous, high-stealth deal discovery and price verification engine for *
 * **Review Count Parser**: Resilient parsing for abbreviated review volumes (`42.8K` &rarr; `42,800`, `1.2M` &rarr; `1,200,000`).
 * **Input Validation**: Added strict `min_discount <= max_discount` boundary verification across `/api/search` and `/api/top-deals`.
 * **Badge Extraction**: Added DOM extraction for `🔥 Best Seller` and `✨ Amazon's Choice` badges, displayed natively alongside `✓ Verified Deal` tags.
-* **Test Suite Expansion**: Expanded unit and integration test suite to **63 passing tests** across 10 test modules.
+* **Test Suite Expansion**: Expanded unit and integration test suite to **66 passing tests** across 10 test modules.
+
+### 5. Category Price Floors, Bayesian Smoothing & Instant Budget Filters
+* **Rogue Accessory Price Floors (`min_price`)**: Eradicated ₹250 silicone cases, ₹69 cables, and cleaning wipes from contaminating high-ticket categories (Laptops $\ge$ ₹12,000; Smartphones $\ge$ ₹4,500; Monitors $\ge$ ₹4,000; TVs $\ge$ ₹4,500; Kitchen Appliances $\ge$ ₹599).
+* **Calibrated Statistical True-Deal Badging**: Replaced static 40% threshold with category-calibrated standards ($\ge 25\%$ for high-margin tech like Laptops, Smartphones, Monitors; $\ge 50\%$ for Fashion) relative to the sample's statistical median discount.
+* **Bayesian Smoothed Rating Quality**: Applied empirical Bayes shrinkage ($m=3.8, C=10$) to rating scores to neutralize single-review 5.0★ fake products while fully rewarding established bestsellers with thousands of verified customer reviews.
+* **Instant 0ms In-Memory Budget Filters**: Added responsive glassmorphic price pills (`All Prices`, `Under ₹1K`, `₹1K – ₹5K`, `₹5K – ₹20K`, `Above ₹20K`) with distinctive teal accents, enabling zero-latency client-side slicing and clear zero-deal feedback states.
 
 Deal Finder automates the extraction of deeply discounted products using Amazon's native `pct-off` URL query filters and browse-node hierarchies. It filters out sponsored clutter, verifies discounts against statistical baseline outliers, calculates a balanced multi-factor deal quality score, embeds 365-day historical price graphs via Keepa, and delivers the results through a modern glassmorphic web interface.
 

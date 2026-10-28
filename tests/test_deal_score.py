@@ -47,3 +47,20 @@ def test_zero_everything():
     product = {"discount_pct": 0, "rating": 0.0, "review_count": 0}
     score = compute_deal_score(product)
     assert score == 0
+
+
+def test_bayesian_fake_review_penalized():
+    """Single-review 5-star fake product is penalized compared to a proven product with same discount."""
+    # Fake product: 1 review, 5.0 stars, 60% discount
+    fake_product = {"discount_pct": 60, "rating": 5.0, "review_count": 1}
+    # Proven product: 2000 reviews, 4.2 stars, 60% discount
+    proven_product = {"discount_pct": 60, "rating": 4.2, "review_count": 2000}
+
+    fake_score = compute_deal_score(fake_product)
+    proven_score = compute_deal_score(proven_product)
+
+    # Fake product rating shrinks toward 3.8: (5.0*1 + 38)/11 = 3.909 -> ~19.5/25
+    # Proven product rating remains ~4.2 -> ~21.0/25, plus review weight (2000/5000*15 = 6.0)
+    assert fake_score < proven_score
+    assert fake_score == 56
+

@@ -25,12 +25,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCategoryNode = null;
     let currentCategoryName = null;
     let currentSortBy = 'popularity';
+    let currentPriceMin = 0;
+    let currentPriceMax = Infinity;
     let currentLoadedProducts = [];
 
-    // ─── In-memory Sorting Helper ───
-    function applySorting(products, sortBy) {
+    // ─── In-memory Filter & Sort Helper ───
+    function applyFiltersAndSorting(products, sortBy, minPrice = currentPriceMin, maxPrice = currentPriceMax) {
         if (!products || products.length === 0) return [];
-        const sorted = [...products];
+
+        // 1. In-memory Budget / Price filtering
+        const filtered = products.filter(p => {
+            const price = p.current_price;
+            if (price == null) return true; // keep if price unparsed
+            return price >= minPrice && price <= maxPrice;
+        });
+
+        // 2. Sorting
+        const sorted = [...filtered];
         if (sortBy === 'deal_score') {
             sorted.sort((a, b) => (b.deal_score ?? -1) - (a.deal_score ?? -1));
         } else if (sortBy === 'discount') {
@@ -41,6 +52,47 @@ document.addEventListener('DOMContentLoaded', () => {
             sorted.sort((a, b) => (a._original_rank ?? 9999) - (b._original_rank ?? 9999));
         }
         return sorted;
+    }
+
+    function updateTopDealsView() {
+        if (!currentLoadedProducts || currentLoadedProducts.length === 0) return;
+
+        const visibleProducts = applyFiltersAndSorting(currentLoadedProducts, currentSortBy, currentPriceMin, currentPriceMax);
+
+        if (visibleProducts.length === 0) {
+            topDealsGrid.innerHTML = '';
+            topDealsError.innerHTML = `<span>No deals match the selected budget filter. Try choosing "All Prices" or another range.</span>`;
+            topDealsError.classList.remove('hidden');
+            if (topDealsCount) {
+                topDealsCount.textContent = '0 Deals';
+                topDealsCount.classList.remove('hidden');
+            }
+        } else {
+            topDealsError.classList.add('hidden');
+            renderProducts(visibleProducts, topDealsGrid, true, currentSortBy);
+            if (topDealsCount) {
+                if (currentPriceMin > 0 || currentPriceMax < Infinity) {
+                    topDealsCount.textContent = `Showing ${visibleProducts.length} of ${currentLoadedProducts.length} Deals`;
+                } else {
+                    topDealsCount.textContent = `Showing ${visibleProducts.length} Deals`;
+                }
+                topDealsCount.classList.remove('hidden');
+            }
+        }
+    }
+
+    function resetPriceFilter() {
+        currentPriceMin = 0;
+        currentPriceMax = Infinity;
+        document.querySelectorAll('.price-pill').forEach(btn => {
+            const min = parseFloat(btn.getAttribute('data-min'));
+            const max = parseFloat(btn.getAttribute('data-max'));
+            if (min === 0 && max === Infinity) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
     }
 
     function handleSortChange(newSortBy) {
@@ -60,16 +112,32 @@ document.addEventListener('DOMContentLoaded', () => {
             topDealsSort.value = newSortBy;
         }
 
-        // Instant 0ms In-Memory Re-sort if products already loaded
-        if (currentLoadedProducts && currentLoadedProducts.length > 0) {
-            const sorted = applySorting(currentLoadedProducts, newSortBy);
-            renderProducts(sorted, topDealsGrid, true, newSortBy);
-        }
+        // Instant 0ms In-Memory Re-sort and filter
+        updateTopDealsView();
 
         // Server-side fetch in background without wiping grid with skeleton
         if (currentCategoryNode) {
             fetchCategoryDeals(currentCategoryNode, currentCategoryName, newSortBy, false);
         }
+    }
+
+    function handlePriceChange(min, max) {
+        currentPriceMin = min;
+        currentPriceMax = max;
+
+        // Sync Price Pills
+        document.querySelectorAll('.price-pill').forEach(btn => {
+            const btnMin = parseFloat(btn.getAttribute('data-min'));
+            const btnMax = parseFloat(btn.getAttribute('data-max'));
+            if (btnMin === min && btnMax === max) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        // Instant 0ms In-Memory Filter update
+        updateTopDealsView();
     }
 
     // Attach click listeners to Sort Pills
@@ -78,6 +146,16 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const sortBy = pill.getAttribute('data-sort');
             handleSortChange(sortBy);
+        });
+    });
+
+    // Attach click listeners to Price Pills
+    document.querySelectorAll('.price-pill').forEach(pill => {
+        pill.addEventListener('click', (e) => {
+            e.preventDefault();
+            const min = parseFloat(pill.getAttribute('data-min'));
+            const max = parseFloat(pill.getAttribute('data-max'));
+            handlePriceChange(min, max);
         });
     });
 
@@ -142,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Update active pill
                 document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
                 pill.classList.add('active');
+                resetPriceFilter();
                 fetchCategoryDeals(cat.node, cat.name);
             });
             categoryPillBar.appendChild(pill);
@@ -212,12 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     p._original_rank = idx + 1;
                 });
                 currentLoadedProducts = data.products;
-                const sorted = applySorting(currentLoadedProducts, sortBy);
-                renderProducts(sorted, topDealsGrid, true, sortBy);
-                if (topDealsCount) {
-                    topDealsCount.textContent = `Showing ${data.products.length} Deals`;
-                    topDealsCount.classList.remove('hidden');
-                }
+                updateTopDealsView();
             }
         } catch (err) {
             if (err.name !== 'AbortError') {

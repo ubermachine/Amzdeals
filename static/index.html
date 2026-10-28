@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
     <div class="app-container">
@@ -76,20 +76,32 @@
                         <!-- Category pills injected by JS -->
                     </div>
                     <div class="top-deals-filter-bar">
-                        <div class="sort-wrapper">
-                            <span class="sort-label">Sort by:</span>
-                            <div class="sort-pills" id="sort-pills">
-                                <button type="button" class="sort-pill active" data-sort="popularity">🔥 Best Sellers</button>
-                                <button type="button" class="sort-pill" data-sort="deal_score">🏆 Deal Score</button>
-                                <button type="button" class="sort-pill" data-sort="discount">💰 Highest Discount</button>
-                                <button type="button" class="sort-pill" data-sort="reviews">⭐ Most Reviewed</button>
+                        <div class="filter-controls-group">
+                            <div class="sort-wrapper">
+                                <span class="filter-label">Sort by:</span>
+                                <div class="sort-pills" id="sort-pills">
+                                    <button type="button" class="sort-pill active" data-sort="popularity">🔥 Best Sellers</button>
+                                    <button type="button" class="sort-pill" data-sort="deal_score">🏆 Deal Score</button>
+                                    <button type="button" class="sort-pill" data-sort="discount">💰 Highest Discount</button>
+                                    <button type="button" class="sort-pill" data-sort="reviews">⭐ Most Reviewed</button>
+                                </div>
+                                <select id="top-deals-sort" class="sort-select visually-hidden" aria-label="Sort deals by">
+                                    <option value="popularity" selected>🔥 Best Sellers / Popularity</option>
+                                    <option value="deal_score">🏆 Deal Score</option>
+                                    <option value="discount">💰 Highest Discount</option>
+                                    <option value="reviews">⭐ Most Reviewed</option>
+                                </select>
                             </div>
-                            <select id="top-deals-sort" class="sort-select visually-hidden" aria-label="Sort deals by">
-                                <option value="popularity" selected>🔥 Best Sellers / Popularity</option>
-                                <option value="deal_score">🏆 Deal Score</option>
-                                <option value="discount">💰 Highest Discount</option>
-                                <option value="reviews">⭐ Most Reviewed</option>
-                            </select>
+                            <div class="price-wrapper">
+                                <span class="filter-label">Budget:</span>
+                                <div class="price-pills" id="price-pills">
+                                    <button type="button" class="price-pill active" data-min="0" data-max="Infinity">All Prices</button>
+                                    <button type="button" class="price-pill" data-min="0" data-max="1000">Under ₹1K</button>
+                                    <button type="button" class="price-pill" data-min="1000" data-max="5000">₹1K – ₹5K</button>
+                                    <button type="button" class="price-pill" data-min="5000" data-max="20000">₹5K – ₹20K</button>
+                                    <button type="button" class="price-pill" data-min="20000" data-max="Infinity">Above ₹20K</button>
+                                </div>
+                            </div>
                         </div>
                         <span id="top-deals-count" class="deals-count-badge hidden"></span>
                     </div>
@@ -109,6 +121,6 @@
             </div>
         </main>
     </div>
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>

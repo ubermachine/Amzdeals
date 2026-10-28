@@ -167,7 +167,7 @@ def compute_deal_score(product: dict) -> int:
 
     Weighted formula:
         - 60% discount percentage (0–100)
-        - 25% rating normalized to 0–100 scale
+        - 25% rating normalized to 0–100 scale (with Bayesian smoothing toward m=3.8, C=10)
         - 15% review count normalized to 0–100 (capped at 5000)
 
     Products with no discount are scored 0.
@@ -182,10 +182,16 @@ def compute_deal_score(product: dict) -> int:
     if discount is None:
         return 0
 
-    rating = product.get("rating") or 0.0
+    rating = product.get("rating")
     reviews = product.get("review_count") or 0
 
-    norm_rating = (rating / 5.0) * 100
+    if rating is not None and rating > 0:
+        # Bayesian shrinkage: pulls low-review items toward prior mean 3.8
+        smoothed_rating = (rating * reviews + 3.8 * 10) / (reviews + 10)
+        norm_rating = (smoothed_rating / 5.0) * 100
+    else:
+        norm_rating = 0.0
+
     norm_reviews = (min(reviews, 5000) / 5000) * 100
 
     score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
@@ -231,6 +237,11 @@ async def search_category_deals(
         cached["cached"] = True
         return cached
 
+    # Look up category metadata for price floors and true deal calibration
+    cat_meta = getattr(config, "CATEGORY_METADATA", {}).get(node, {})
+    min_price = cat_meta.get("min_price", 0)
+    min_true_deal_pct = cat_meta.get("min_true_deal_pct", 35)
+
     # Fetch multiple pages
     all_products = []
     seen_asins = set()
@@ -259,6 +270,9 @@ async def search_category_deals(
             break
 
         for p in products:
+            price = p.get("current_price") if p.get("current_price") is not None else p.get("price")
+            if price is not None and price < min_price:
+                continue
             asin = p.get("asin")
             if asin and asin not in seen_asins:
                 seen_asins.add(asin)
@@ -284,7 +298,7 @@ async def search_category_deals(
 
     for p in all_products:
         d = p.get("discount_pct")
-        if d is not None and d >= 40 and d >= category_median_discount + 10:
+        if d is not None and d >= min_true_deal_pct and d >= category_median_discount + 8:
             p["is_true_deal"] = True
         else:
             p["is_true_deal"] = False

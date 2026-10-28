@@ -660,15 +660,24 @@ button:hover {
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: 1.25rem;
     padding-top: 0.75rem;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.sort-wrapper {
+.filter-controls-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.5rem;
+    flex: 1;
+}
+
+.sort-wrapper, .price-wrapper {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
+    flex-wrap: wrap;
 }
 
 .sort-wrapper label {
@@ -773,27 +782,30 @@ button:hover {
 }
 
 
-/* ─── Sort Pills & Visual Helpers ─── */
-.sort-label {
-    font-size: 0.9rem;
+/* ─── Sort & Price Filter Pills ─── */
+.filter-label, .sort-label {
+    font-size: 0.85rem;
     color: var(--text-secondary);
-    font-weight: 500;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
 }
 
-.sort-pills {
+.sort-pills, .price-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.45rem;
     align-items: center;
 }
 
-.sort-pill {
+.sort-pill, .price-pill {
     background: rgba(255, 255, 255, 0.05);
     color: var(--text-secondary);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 20px;
-    padding: 0.4rem 0.9rem;
-    font-size: 0.85rem;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.82rem;
     font-weight: 500;
     cursor: pointer;
     transition: var(--transition);
@@ -818,6 +830,22 @@ button:hover {
     color: #e0aaff;
     border-color: var(--accent-color);
     box-shadow: 0 0 15px var(--accent-glow);
+    font-weight: 600;
+}
+
+.price-pill:hover {
+    color: var(--text-primary);
+    border-color: rgba(46, 196, 182, 0.4);
+    background: rgba(46, 196, 182, 0.08);
+    transform: none;
+    box-shadow: none;
+}
+
+.price-pill.active {
+    background: rgba(46, 196, 182, 0.2);
+    color: #2ec4b6;
+    border-color: #2ec4b6;
+    box-shadow: 0 0 14px rgba(46, 196, 182, 0.35);
     font-weight: 600;
 }
 

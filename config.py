@@ -44,6 +44,29 @@ CATEGORIES = [
     {"name": "Baby Care & Toys", "node": "1953111031", "icon": "👶"},
 ]
 
+# Category Metadata: Price floors (to eradicate rogue accessories) & calibrated true-deal thresholds
+CATEGORY_METADATA = {
+    # Node: {"min_price": int (INR), "min_true_deal_pct": int}
+    "1375424031": {"min_price": 12000, "min_true_deal_pct": 25},  # Laptops
+    "1805560031": {"min_price": 4500,  "min_true_deal_pct": 25},  # Smartphones
+    "29561348031": {"min_price": 299,  "min_true_deal_pct": 35},  # Headphones & Earbuds
+    "11599648031": {"min_price": 699,  "min_true_deal_pct": 35},  # Smartwatches
+    "1983518031": {"min_price": 499,   "min_true_deal_pct": 45},  # Shoes & Sneakers
+    "1350387031": {"min_price": 499,   "min_true_deal_pct": 40},  # Watches
+    "2917436031": {"min_price": 499,   "min_true_deal_pct": 40},  # Luggage & Backpacks
+    "1374298031": {"min_price": 249,   "min_true_deal_pct": 40},  # Perfumes & Fragrances
+    "4951860031": {"min_price": 599,   "min_true_deal_pct": 35},  # Kitchen Appliances
+    "5925789031": {"min_price": 299,   "min_true_deal_pct": 40},  # Cookware & Dining
+    "1375425031": {"min_price": 4000,  "min_true_deal_pct": 25},  # Monitors
+    "1375458031": {"min_price": 5000,  "min_true_deal_pct": 25},  # Tablets & iPads
+    "1389375031": {"min_price": 4500,  "min_true_deal_pct": 25},  # TVs & Projectors
+    "1375393031": {"min_price": 450,   "min_true_deal_pct": 30},  # Storage & SSDs
+    "1380441031": {"min_price": 899,   "min_true_deal_pct": 35},  # Furniture
+    "1968024031": {"min_price": 349,   "min_true_deal_pct": 50},  # Men's Clothing
+    "1953602031": {"min_price": 349,   "min_true_deal_pct": 50},  # Women's Clothing
+    "1953111031": {"min_price": 299,   "min_true_deal_pct": 35},  # Baby Care & Toys
+}
+
 # Top Deals
 TOP_DEALS_PAGES = 5       # pages to scrape per category
 TOP_DEALS_LIMIT = 100     # max products per category
