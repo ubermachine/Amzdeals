@@ -7,6 +7,24 @@ from cache.sqlite_cache import make_category_cache_key
 from scraper.engine import search_category_deals
 
 
+@pytest.fixture(autouse=True)
+def default_mock_flipkart():
+    with patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as m:
+        m.return_value = {
+            "match_found": False,
+            "verdict": "unverified",
+            "is_deal": False,
+            "flipkart_price": None,
+            "flipkart_title": None,
+            "flipkart_url": None,
+            "match_confidence": 0.0,
+            "price_diff": 0.0,
+            "diff_pct": 0.0,
+        }
+        yield m
+
+
+
 def test_category_cache_key_deterministic():
     key1 = make_category_cache_key("976419031", 40, 90)
     key2 = make_category_cache_key("976419031", 40, 90)

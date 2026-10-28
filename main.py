@@ -111,15 +111,20 @@ async def api_top_deals(
         _cache = SearchCache()
         await _cache.init()
 
-    # Look up category name from node
+    # Look up category node and name
+    node = category
     category_name = "Unknown"
     for cat in config.CATEGORIES:
         if cat["node"] == category:
             category_name = cat["name"]
             break
+        elif cat["name"].lower() == category.lower().replace("-", " ") or cat["name"].lower().startswith(category.lower()):
+            node = cat["node"]
+            category_name = cat["name"]
+            break
 
     result = await search_category_deals(
-        node=category,
+        node=node,
         category_name=category_name,
         min_discount=min_discount,
         max_discount=max_discount,

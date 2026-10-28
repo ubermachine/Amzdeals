@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import urllib.parse
+from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 import config
@@ -17,14 +18,30 @@ from scraper.stealth import get_stealth_headers
 
 logger = logging.getLogger(__name__)
 
-# Known brand prefixes for accurate title tokenization
+# Known brand prefixes for accurate title tokenization (ordered by length descending)
 KNOWN_BRANDS = [
+    "american tourister", "sol de janeiro", "western digital",
     "asus", "acer", "hp", "dell", "lenovo", "apple", "samsung", "realme", "xiaomi",
     "redmi", "boat", "noise", "boult", "sony", "jbl", "philips", "puma", "nike",
-    "adidas", "titan", "fastrack", "casio", "safari", "american tourister", "skybags",
+    "adidas", "titan", "fastrack", "casio", "safari", "skybags",
     "wildcraft", "oneplus", "oppo", "vivo", "motorola", "moto", "infinix", "lg",
     "whirlpool", "bajaj", "prestige", "pigeon", "havells", "crompton", "zebronics",
-    "sandisk", "crucial", "western digital", "wd", "seagate", "kingston", "sol de janeiro"
+    "sandisk", "crucial", "wd", "seagate", "kingston"
+]
+
+# Recognizable model series for cross-market matching & query formulation
+SERIES_PATTERNS = [
+    r"ideapad slim \d+", r"ideapad \d+", r"ideapad", r"thinkbook \d+", r"thinkbook",
+    r"thinkpad \w+", r"thinkpad", r"loq", r"legion \d+", r"legion",
+    r"victus \d+", r"victus", r"pavilion \d+", r"pavilion", r"omen \d+", r"omen",
+    r"tuf gaming", r"tuf", r"rog strix", r"rog zephyrus", r"rog", r"zenbook", r"vivobook",
+    r"aspire \d+", r"aspire one", r"aspire", r"swift \d+", r"swift go", r"swift",
+    r"predator helios", r"predator", r"nitro \d+", r"nitro v", r"nitro",
+    r"galaxy s\d+(?: ultra| plus|\+)?", r"galaxy z (?:fold|flip)\d*", r"galaxy a\d+", r"galaxy m\d+",
+    r"nord ce\d*(?: lite)?", r"nord \d+",
+    r"airdopes \d+(?: pro| plus| max)?", r"rockerz \d+(?: pro| plus)?",
+    r"wh-ch\d+[a-z]*", r"wf-c\d+[a-z]*", r"wh-\d+[a-z]*",
+    r"chromebook \d+", r"chromebook",
 ]
 
 # Fluff phrases to strip from Amazon titles
@@ -39,7 +56,7 @@ FLUFF_PATTERNS = [
 
 
 def extract_product_signature(title: str) -> dict:
-    """Extract brand, alphanumeric model numbers, specs, and search query from title."""
+    """Extract brand, series, alphanumeric model numbers, specs, and search query from title."""
     clean_text = title
     for p in FLUFF_PATTERNS:
         clean_text = re.sub(p, " ", clean_text, flags=re.IGNORECASE)
@@ -47,54 +64,90 @@ def extract_product_signature(title: str) -> dict:
 
     title_lower = title.lower()
 
-    # 1. Brand Detection
+    # 1. Brand Detection (prioritize prefix, exclude false positives like 'noise cancellation')
     brand = ""
     for b in KNOWN_BRANDS:
-        if title_lower.startswith(b) or f" {b} " in f" {title_lower} ":
+        if title_lower.startswith(b + " ") or title_lower.startswith(b + ",") or title_lower.startswith(b + "-"):
             brand = b
             break
+
+    if not brand:
+        for b in KNOWN_BRANDS:
+            if b == "noise":
+                if re.search(r"\bnoise\s+(cancellation|cancelling|canceling|isolation|isolating|reduction)\b", title_lower):
+                    continue
+            if re.search(rf"\b{re.escape(b)}\b", title_lower):
+                brand = b
+                break
+
     if not brand:
         words = title.split()
         brand = words[0].lower() if words else ""
 
-    # 2. Model / Part Number Extraction
+    # 2. Series Detection
+    series = ""
+    for pat in SERIES_PATTERNS:
+        m = re.search(rf"\b({pat})\b", title_lower)
+        if m:
+            series = m.group(1).strip()
+            break
+
+    # 3. Model / Part Number / CPU Extraction
     model_patterns = re.findall(
-        r"\b([A-Z0-9]{2,}-[A-Z0-9]{2,}|\b[A-Z]{1,3}[0-9]{3,}[A-Z0-9]*\b|\b[0-9]{3,4}\b)",
-        title
+        r"\b([A-Z0-9]{2,}-[A-Z0-9]{2,}|\b[A-Z]{1,3}[0-9]{3,}[A-Z0-9]*\b|\b[0-9]{4,5}[A-Z]{1,3}\b|\b[0-9]{2}[A-Z]{2,3}[0-9]{4}[A-Z]{2,3}\b|\b(?:i[3579]|ryzen [3579])[- ]?[0-9]{4,5}[A-Z]*\b|\b[0-9]{3,4}\b)",
+        title,
+        flags=re.IGNORECASE,
     )
-    # Ignore standalone common years or generic round numbers
     excluded_numbers = {"2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000"}
     models = []
+    if series:
+        models.append(series.upper())
+
     for m in model_patterns:
-        if m not in excluded_numbers:
-            models.append(m.upper())
-            # Include base prefix before hyphen (e.g. FA506NCG from FA506NCG-HN192WS)
-            if "-" in m:
-                base = m.split("-")[0].strip().upper()
+        m_up = m.upper().strip()
+        if m_up not in excluded_numbers and m_up not in models:
+            models.append(m_up)
+            if "-" in m_up:
+                base = m_up.split("-")[0].strip()
                 if len(base) >= 3 and base not in models:
                     models.append(base)
 
-    # 3. Spec Extraction (RAM, Storage, Volume)
+    # 4. Spec Extraction (RAM, Storage, Volume)
     raw_specs = re.findall(r"\b([0-9]+(?:\.[0-9]+)?\s*(?:GB|TB|MB|L|ml))\b", title, flags=re.IGNORECASE)
     specs = {s.upper().replace(" ", "") for s in raw_specs}
 
-    # 4. Formulate targeted search query for Flipkart
-    query_parts = [brand]
+    # 5. Formulate targeted search query for Flipkart
+    query_parts = []
+    if brand:
+        query_parts.append(brand)
+    if series:
+        query_parts.append(series)
+
     for m in models:
-        if not m.isdigit():  # Prioritize alphanumeric models like FA506NCG, HD9200
-            query_parts.append(m)
+        m_str = str(m)
+        if not m_str.isdigit() and m_str.lower() != (brand or "") and m_str.lower() != (series or ""):
+            query_parts.append(m_str)
             break
-    if len(query_parts) == 1 and models:
-        query_parts.append(models[0])
 
-    # If no model found, take first 3 clean words
-    if len(query_parts) == 1:
-        query_parts.extend(clean_text.split()[:3])
+    if len(query_parts) <= 1:
+        clean_words = [w for w in re.sub(r"[^\w\s]", " ", clean_text).split() if len(w) > 2]
+        query_parts.extend(clean_words[:3])
 
-    search_query = " ".join(dict.fromkeys(query_parts))
+    # De-duplicate while preserving order and clean tokens
+    seen_tokens = set()
+    final_tokens = []
+    for part in query_parts:
+        for t in part.split():
+            clean_t = re.sub(r"[^\w]", "", t.lower())
+            if clean_t and clean_t not in seen_tokens:
+                seen_tokens.add(clean_t)
+                final_tokens.append(clean_t)
+
+    search_query = " ".join(final_tokens)
 
     return {
         "brand": brand,
+        "series": series,
         "models": models,
         "specs": specs,
         "search_query": search_query,
@@ -103,53 +156,104 @@ def extract_product_signature(title: str) -> dict:
 
 
 def parse_flipkart_html(html: str) -> list[dict]:
-    """Parse candidate products from Flipkart's window.__INITIAL_STATE__ payload."""
-    match = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\});\s*<\/script>", html, re.DOTALL)
-    if not match:
-        return []
+    """Parse candidate products from Flipkart HTML.
 
-    try:
-        data = json.loads(match.group(1))
-    except Exception as e:
-        logger.warning("Failed to parse Flipkart JSON payload: %s", e)
-        return []
-
-    page_data = data.get("pageDataV4", {}).get("page", {}).get("data", {})
-    found_nodes = []
-
-    def _traverse(obj):
-        if isinstance(obj, dict):
-            if "productInfo" in obj and isinstance(obj["productInfo"], dict):
-                found_nodes.append(obj)
-            for v in obj.values():
-                _traverse(v)
-        elif isinstance(obj, list):
-            for item in obj:
-                _traverse(item)
-
-    _traverse(page_data)
-
+    Dual-layer parsing:
+    1. Try JSON state payload (window.__INITIAL_STATE__)
+    2. Fallback to BeautifulSoup HTML DOM parsing if JSON state is absent or empty.
+    """
     candidates = []
-    for node in found_nodes:
-        info = node["productInfo"].get("value", {})
-        title = info.get("titles", {}).get("title")
-        pricing = info.get("pricing", {})
-        prices = pricing.get("prices", [])
 
-        cur_price = next((p["value"] for p in prices if not p.get("strikeOff")), None)
-        mrp = next((p["value"] for p in prices if p.get("strikeOff")), None)
-        rating = info.get("rating", {}).get("average")
-        base_url = info.get("baseUrl")
-        url = f"https://www.flipkart.com{base_url}" if base_url else None
+    # Layer 1: JSON state
+    match = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\});\s*<\/script>", html, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            page_data = data.get("pageDataV4", {}).get("page", {}).get("data", {})
+            found_nodes = []
 
-        if title and cur_price:
-            candidates.append({
-                "title": title,
-                "price": float(cur_price),
-                "mrp": float(mrp) if mrp else None,
-                "rating": float(rating) if rating else None,
-                "url": url,
-            })
+            def _traverse(obj):
+                if isinstance(obj, dict):
+                    if "productInfo" in obj and isinstance(obj["productInfo"], dict):
+                        found_nodes.append(obj)
+                    for v in obj.values():
+                        _traverse(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        _traverse(item)
+
+            _traverse(page_data)
+
+            for node in found_nodes:
+                info = node["productInfo"].get("value", {})
+                title = info.get("titles", {}).get("title")
+                pricing = info.get("pricing", {})
+                prices = pricing.get("prices", [])
+
+                cur_price = next((p["value"] for p in prices if not p.get("strikeOff")), None)
+                mrp = next((p["value"] for p in prices if p.get("strikeOff")), None)
+                rating = info.get("rating", {}).get("average")
+                base_url = info.get("baseUrl")
+                url = f"https://www.flipkart.com{base_url}" if base_url else None
+
+                if title and cur_price:
+                    candidates.append({
+                        "title": title,
+                        "price": float(cur_price),
+                        "mrp": float(mrp) if mrp else None,
+                        "rating": float(rating) if rating else None,
+                        "url": url,
+                    })
+        except Exception as e:
+            logger.warning("Failed to parse Flipkart JSON payload: %s", e)
+
+    if candidates:
+        return candidates
+
+    # Layer 2: BeautifulSoup HTML DOM parsing
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for card in soup.select("div[data-id]"):
+            title_el = card.select_one("div.KzDlHZ, a.pIpigb, a[title], img[alt]")
+            title = (title_el.get("title") or title_el.get("alt") or title_el.get_text(strip=True)) if title_el else ""
+
+            price_el = card.select_one(".hZ3P6w, .Nx9bqj")
+            if not price_el:
+                for el in card.find_all(string=re.compile(r"₹")):
+                    t = el.strip()
+                    if t.startswith("₹"):
+                        price_el = el.parent
+                        break
+            price_text = price_el.get_text(strip=True) if price_el else ""
+            price_m = re.search(r"₹([\d,]+)", price_text)
+            price = float(price_m.group(1).replace(",", "")) if price_m else None
+
+            mrp_el = card.select_one(".kRYCnD, .yKfB63")
+            mrp_text = mrp_el.get_text(strip=True) if mrp_el else ""
+            mrp_m = re.search(r"₹([\d,]+)", mrp_text)
+            mrp = float(mrp_m.group(1).replace(",", "")) if mrp_m else None
+
+            link_el = card.select_one("a[href*='/p/']")
+            base_url = link_el.get("href") if link_el else None
+            url = f"https://www.flipkart.com{base_url}" if base_url else None
+
+            rating_el = card.select_one(".MKiFS6, .XqdRHH")
+            rating_text = rating_el.get_text(strip=True) if rating_el else None
+            try:
+                rating = float(rating_text) if rating_text else None
+            except (ValueError, TypeError):
+                rating = None
+
+            if title and price:
+                candidates.append({
+                    "title": title,
+                    "price": price,
+                    "mrp": mrp,
+                    "rating": rating,
+                    "url": url,
+                })
+    except Exception as e:
+        logger.warning("Failed to parse Flipkart DOM: %s", e)
 
     return candidates
 
@@ -202,7 +306,7 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
     - Brand must match or rejected (0.0).
     - No chipset or model-family conflicts (e.g. Intel vs AMD, LOQ vs V15).
     - Base score: 30 pts.
-    - Model/MPN match: +40 pts.
+    - Model/MPN/Series match: +40 pts.
     - Spec match (RAM/Storage/Capacity): +20 pts on match, -25 pts penalty on conflict.
     - Token Jaccard overlap: up to 15 pts.
     """
@@ -226,15 +330,22 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
 
     score = 30.0
 
-    # 3. Model number match
+    # 4. Model / Series match (+40 pts)
+    matched_model = False
     for m in amazon_sig.get("models", []):
-        m_lower = m.lower()
+        m_lower = str(m).lower()
         base_model = m_lower.split("-")[0]
         if (len(m_lower) >= 3 and m_lower in fk_title) or (len(base_model) >= 3 and base_model in fk_title):
             score += 40.0
+            matched_model = True
             break
 
-    # 4. Spec match
+    if not matched_model and amazon_sig.get("series"):
+        series_lower = amazon_sig["series"].lower()
+        if len(series_lower) >= 3 and series_lower in fk_title:
+            score += 35.0
+
+    # 5. Spec match
     raw_fk_specs = re.findall(r"\b([0-9]+(?:\.[0-9]+)?\s*(?:GB|TB|MB|L|ml))\b", candidate["title"], flags=re.IGNORECASE)
     fk_specs = {s.upper().replace(" ", "") for s in raw_fk_specs}
 
@@ -247,7 +358,7 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
         if diff and not overlap:
             score -= 25.0
 
-    # 5. Token Jaccard Overlap
+    # 6. Token Jaccard Overlap
     amz_tokens = set(re.findall(r"[a-z0-9]+", amazon_sig.get("raw_title", "").lower()))
     fk_tokens = set(re.findall(r"[a-z0-9]+", fk_title))
     if amz_tokens:
@@ -258,15 +369,19 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
 
 
 def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) -> dict:
-    """Classify the price difference under the +/-5% market parity rule."""
-    if not flipkart_price or flipkart_price <= 0:
-        return {"verdict": "unverified", "is_deal": False}
+    """Classify pricing verdict between Amazon and Flipkart using +/-5% parity threshold."""
+    if not amazon_price or not flipkart_price:
+        return {
+            "verdict": "unverified",
+            "is_deal": False,
+            "price_diff": 0.0,
+            "diff_pct": 0.0,
+        }
 
     diff = amazon_price - flipkart_price
     diff_pct = diff / flipkart_price
 
-    if abs(diff_pct) < 0.05:
-        # Market Parity: Prices match within +/- 5%. NOT a deal!
+    if abs(diff_pct) <= 0.05:
         return {
             "verdict": "market_parity",
             "is_deal": False,
@@ -274,7 +389,6 @@ def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) ->
             "diff_pct": round(diff_pct * 100, 1),
         }
     elif diff_pct <= -0.05:
-        # Amazon is >= 5% cheaper than Flipkart -> Genuine True Deal!
         return {
             "verdict": "true_deal",
             "is_deal": True,
@@ -282,7 +396,6 @@ def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) ->
             "diff_pct": round(abs(diff_pct) * 100, 1),
         }
     else:
-        # Flipkart is >= 5% cheaper than Amazon -> Fake Deal / Marked up!
         return {
             "verdict": "cheaper_on_flipkart",
             "is_deal": False,
@@ -313,19 +426,7 @@ async def verify_product_against_flipkart(
     session: requests.AsyncSession,
     cache: SearchCache,
 ) -> dict:
-    """Verify an Amazon product against Flipkart using entity disambiguation & +/-5% parity.
-
-    Returns dict with keys:
-        - match_found: bool
-        - verdict: 'true_deal' | 'market_parity' | 'cheaper_on_flipkart' | 'unverified'
-        - is_deal: bool
-        - flipkart_price: float | None
-        - flipkart_title: str | None
-        - flipkart_url: str | None
-        - match_confidence: float (0-100)
-        - price_diff: float
-        - diff_pct: float
-    """
+    """Verify an Amazon product against Flipkart using entity disambiguation & +/-5% parity."""
     asin = amazon_product.get("asin")
     title = amazon_product.get("title", "")
     amazon_price = amazon_product.get("current_price") or amazon_product.get("price")
@@ -360,37 +461,36 @@ async def verify_product_against_flipkart(
         await cache.set_flipkart(cache_key, fallback_unverified)
         return fallback_unverified
 
-    # 3. Score candidates with 5-layer disambiguation
+    # 3. Score candidates with 5-layer disambiguation (brand + model/series match >= 70.0)
     scored_candidates = []
     for c in candidates:
         score = score_flipkart_match(sig, amazon_price, c)
-        if score >= 80.0:  # Strict confidence threshold
+        if score >= 70.0:
             scored_candidates.append((score, c))
 
     if not scored_candidates:
         await cache.set_flipkart(cache_key, fallback_unverified)
         return fallback_unverified
 
-    # 4. Pick highest-scoring verified match
     scored_candidates.sort(key=lambda x: x[0], reverse=True)
-    best_score, best_cand = scored_candidates[0]
+    best_score, best_match = scored_candidates[0]
 
-    # 5. Classify against +/-5% market parity
-    verdict_info = classify_cross_market_verdict(amazon_price, best_cand["price"])
+    # 4. Classify cross-market verdict
+    verdict_info = classify_cross_market_verdict(amazon_price, best_match["price"])
 
     result = {
         "match_found": True,
         "verdict": verdict_info["verdict"],
         "is_deal": verdict_info["is_deal"],
-        "flipkart_price": best_cand["price"],
-        "flipkart_title": best_cand["title"],
-        "flipkart_url": best_cand["url"],
-        "flipkart_mrp": best_cand.get("mrp"),
+        "flipkart_price": best_match["price"],
+        "flipkart_title": best_match["title"],
+        "flipkart_url": best_match.get("url"),
         "match_confidence": round(best_score, 1),
         "price_diff": verdict_info.get("price_diff", 0.0),
+        "flipkart_savings": verdict_info.get("flipkart_savings", abs(verdict_info.get("price_diff", 0.0))),
         "diff_pct": verdict_info.get("diff_pct", 0.0),
     }
 
+    # 5. Persist to cache
     await cache.set_flipkart(cache_key, result)
     return result
-

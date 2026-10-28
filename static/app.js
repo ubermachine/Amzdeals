@@ -414,8 +414,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (product.cross_market && product.cross_market.match_found) {
                 const cm = product.cross_market;
                 const fkPriceFormatted = cm.flipkart_price ? `₹${Math.round(cm.flipkart_price).toLocaleString('en-IN')}` : '';
-                const diffFormatted = cm.price_diff ? `₹${Math.round(cm.price_diff).toLocaleString('en-IN')}` : '';
-                const savingsFormatted = cm.flipkart_savings ? `₹${Math.round(cm.flipkart_savings).toLocaleString('en-IN')}` : '';
+                const diffFormatted = cm.price_diff ? `₹${Math.round(Math.abs(cm.price_diff)).toLocaleString('en-IN')}` : '';
+                const savingsFormatted = (cm.flipkart_savings || cm.price_diff) ? `₹${Math.round(Math.abs(cm.flipkart_savings || cm.price_diff)).toLocaleString('en-IN')}` : '';
                 const fkUrl = cm.flipkart_url || '#';
 
                 if (cm.verdict === 'true_deal') {
@@ -431,9 +431,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         </a>
                     `;
                 } else if (cm.verdict === 'cheaper_on_flipkart') {
+                    const saveText = savingsFormatted ? `Save ${savingsFormatted} ` : '';
                     flipkartBadge = `
-                        <a href="${escapeHtml(fkUrl)}" target="_blank" rel="noopener noreferrer" class="flipkart-badge fk-cheaper" title="Amazon price is higher than Flipkart">
-                            <span class="fk-icon">⚠️</span> Cheaper on Flipkart: Save ${savingsFormatted} (${fkPriceFormatted}) ↗
+                        <a href="${escapeHtml(fkUrl)}" target="_blank" rel="noopener noreferrer" class="flipkart-badge fk-cheaper" title="Amazon price is higher than Flipkart (${fkPriceFormatted})">
+                            <span class="fk-icon">⚠️</span> Cheaper on Flipkart: ${saveText}(${fkPriceFormatted}) ↗
                         </a>
                     `;
                 }

@@ -306,8 +306,15 @@ async def search_category_deals(
         p["deal_score"] = compute_deal_score(p)
 
     # ── Strict Category Batch: Cross-Market Flipkart Verification ──
+    # Prioritize candidate deals (is_true_deal) PLUS top category products to ensure
+    # users see Flipkart price parity / deal verdicts across top cards.
     candidate_deals = [p for p in all_products if p.get("is_true_deal")]
-    if candidate_deals:
+    target_prods = list(candidate_deals[:12])
+    for p in all_products[:8]:
+        if p not in target_prods:
+            target_prods.append(p)
+
+    if target_prods:
         session = await _get_session()
         fk_semaphore = asyncio.Semaphore(2)
 
@@ -332,8 +339,8 @@ async def search_category_deals(
                 except Exception as e:
                     logger.warning("Error verifying product %s on Flipkart: %s", prod.get("asin"), e)
 
-        # Batch verify top candidate deals (limit to top 15 to keep latency tight)
-        await asyncio.gather(*[_verify_one(p) for p in candidate_deals[:15]])
+        # Batch verify target products (limit to 20 to keep latency tight)
+        await asyncio.gather(*[_verify_one(p) for p in target_prods[:20]])
 
     if sort_by == "deal_score":
         all_products.sort(key=lambda p: p["deal_score"], reverse=True)
@@ -490,6 +497,28 @@ async def search_deals(
 
     for p in products:
         p["deal_score"] = compute_deal_score(p)
+
+    # Cross-Market Flipkart Verification on top search results
+    if products:
+        session = await _get_session()
+        fk_semaphore = asyncio.Semaphore(2)
+
+        async def _verify_one_search(prod):
+            async with fk_semaphore:
+                try:
+                    fk_res = await verify_product_against_flipkart(prod, session, cache)
+                    prod["cross_market"] = fk_res
+                    verdict = fk_res.get("verdict")
+                    if verdict == "market_parity":
+                        prod["deal_score"] = max(0, prod["deal_score"] - 15)
+                    elif verdict == "cheaper_on_flipkart":
+                        prod["deal_score"] = max(0, prod["deal_score"] - 25)
+                    elif verdict == "true_deal":
+                        prod["deal_score"] = min(100, prod["deal_score"] + 10)
+                except Exception as e:
+                    logger.warning("Error verifying search product %s on Flipkart: %s", prod.get("asin"), e)
+
+        await asyncio.gather(*[_verify_one_search(p) for p in products[:5]])
 
     result = {
         "query": query,

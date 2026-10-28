@@ -221,3 +221,45 @@ def test_score_flipkart_match_rejects_chipset_and_series_conflict():
     assert score == 0.0
 
 
+def test_extract_product_signature_sony_not_noise():
+    """Active Noise Cancellation in title must never trigger the 'noise' brand."""
+    title = "Sony WH-CH720N Active Noise Cancellation Wireless Bluetooth Headphones"
+    sig = extract_product_signature(title)
+    assert sig["brand"] == "sony"
+    assert sig["series"] == "wh-ch720n"
+    assert "sony" in sig["search_query"]
+    assert "noise" not in sig["search_query"]
+
+
+def test_extract_product_signature_series_ideapad():
+    """IdeaPad Slim 3 series is captured as a core model anchor."""
+    title = "Lenovo IdeaPad Slim 3 13th Gen, Intel Core i5-13420H, 16GB RAM, 512GB SSD"
+    sig = extract_product_signature(title)
+    assert sig["brand"] == "lenovo"
+    assert sig["series"] == "ideapad slim 3"
+    assert "ideapad" in sig["search_query"]
+    assert "slim" in sig["search_query"]
+
+
+def test_parse_flipkart_html_beautifulsoup_fallback():
+    """When window.__INITIAL_STATE__ is missing, falls back to DOM card extraction."""
+    raw_html = '''
+    <html><body>
+    <div data-id="TESTPID123">
+        <a class="pIpigb" title="SONY WH-CH720N Bluetooth Headset" href="/sony-wh-ch720n/p/itm123?pid=TESTPID123"></a>
+        <div class="hZ3P6w">₹6,989</div>
+        <div class="kRYCnD">₹14,990</div>
+        <div class="MKiFS6">4.4</div>
+    </div>
+    </body></html>
+    '''
+    candidates = parse_flipkart_html(raw_html)
+    assert len(candidates) == 1
+    assert candidates[0]["title"] == "SONY WH-CH720N Bluetooth Headset"
+    assert candidates[0]["price"] == 6989.0
+    assert candidates[0]["mrp"] == 14990.0
+    assert candidates[0]["rating"] == 4.4
+    assert "TESTPID123" in candidates[0]["url"]
+
+
+
