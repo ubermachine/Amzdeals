@@ -208,3 +208,16 @@ async def test_verify_product_against_flipkart_e2e_market_parity():
         assert res["is_deal"] is False
         assert mock_cache.set_flipkart.call_count == 1
 
+
+def test_score_flipkart_match_rejects_chipset_and_series_conflict():
+    """Intel V15 office laptop must never match AMD LOQ gaming laptop."""
+    amz_title = "Lenovo Smartchoice V15, Intel Core i5-13420H, 16GB RAM, 512GB SSD"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo LOQ 2025 AMD Ryzen 7 Octa Core 250 - (16 GB/512 GB SSD/RTX 5050)",
+        "price": 159990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=71990.0, candidate=candidate)
+    assert score == 0.0
+
+

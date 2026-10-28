@@ -59,6 +59,7 @@ def _parse_review_count(text: str | None) -> int | None:
         return int(round(val))
     except (ValueError, TypeError):
         return None
+    return None
 
 
 def _parse_discount(text: str | None) -> int | None:
@@ -92,16 +93,30 @@ def parse_search_results(html: str) -> list[dict]:
         if not asin:
             continue
 
-        # Title
-        title_tag = item.select_one(
+        # Title extraction:
+        # On Amazon search result cards, full title can be in div.s-title-instructions-style a,
+        # h2 a.a-text-normal, or h2 with brand prefix
+        title_link = item.select_one(
+            "div.s-title-instructions-style a.a-text-normal, "
+            "div[data-cy='title-recipe'] a.a-text-normal, "
+            "h2 a.a-text-normal, "
+            "h2 a span.a-text-normal, "
+            "h2 a span, "
             "h2 .a-size-medium.a-color-base.a-text-normal, "
             "h2 .a-size-base-plus.a-color-base.a-text-normal, "
             "h2 .a-text-normal"
         )
-        title = title_tag.get_text(strip=True) if title_tag else ""
-        if not title:
-            h2 = item.select_one("h2")
-            title = h2.get_text(strip=True) if h2 else "Unknown Product"
+        h2 = item.select_one("h2")
+        h2_text = h2.get_text(strip=True) if h2 else ""
+
+        if title_link:
+            sub_title = title_link.get_text(strip=True)
+            if h2_text and not sub_title.lower().startswith(h2_text.lower()) and len(h2_text) < 30:
+                title = f"{h2_text} {sub_title}"
+            else:
+                title = sub_title
+        else:
+            title = h2_text or "Unknown Product"
 
         # Image
         img_tag = item.select_one("img.s-image")

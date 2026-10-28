@@ -154,12 +154,53 @@ def parse_flipkart_html(html: str) -> list[dict]:
     return candidates
 
 
+def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
+    """Detect architectural, chipset, or model-family conflicts (e.g. Intel vs AMD, V15 vs LOQ)."""
+    amz_lower = amz_title.lower()
+    fk_lower = fk_title.lower()
+
+    # 1. CPU Brand Conflict (Intel vs AMD)
+    has_amz_intel = "intel" in amz_lower or bool(re.search(r"\b(i3|i5|i7|i9|celeron|pentium|core ultra)\b", amz_lower))
+    has_amz_amd = "amd" in amz_lower or "ryzen" in amz_lower
+    has_fk_intel = "intel" in fk_lower or bool(re.search(r"\b(i3|i5|i7|i9|celeron|pentium|core ultra)\b", fk_lower))
+    has_fk_amd = "amd" in fk_lower or "ryzen" in fk_lower
+
+    if has_amz_intel and not has_amz_amd and has_fk_amd and not has_fk_intel:
+        return True
+    if has_amz_amd and not has_amz_intel and has_fk_intel and not has_fk_amd:
+        return True
+
+    # 2. CPU Tier Conflict (i3 vs i5 vs i7 vs i9)
+    tiers = ["i3", "i5", "i7", "i9", "ryzen 3", "ryzen 5", "ryzen 7", "ryzen 9"]
+    for tier in tiers:
+        if bool(re.search(rf"\b{tier}\b", amz_lower)) and not bool(re.search(rf"\b{tier}\b", fk_lower)):
+            for other in tiers:
+                if other != tier and bool(re.search(rf"\b{other}\b", fk_lower)):
+                    return True
+
+    # 3. Known series conflicts
+    series_list = [
+        "loq", "legion", "ideapad", "thinkpad", "thinkbook", "v15", "v14",
+        "tuf", "rog", "zenbook", "vivobook",
+        "victus", "pavilion", "omen", "envy", "spectre",
+        "aspire", "swift", "predator", "nitro",
+    ]
+    for s in series_list:
+        if bool(re.search(rf"\b{s}\b", amz_lower)) and not bool(re.search(rf"\b{s}\b", fk_lower)):
+            for other_s in series_list:
+                if other_s != s and bool(re.search(rf"\b{other_s}\b", fk_lower)):
+                    return True
+
+    return False
+
+
 def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict) -> float:
     """Compute 0–100 match confidence score between Amazon item and Flipkart candidate.
 
     Strict rules:
-    - Must be within realistic price corridor (0.35x to 2.8x) or rejected (0.0).
+    - Must be within realistic price corridor (0.50x to 1.85x) or rejected (0.0).
     - Brand must match or rejected (0.0).
+    - No chipset or model-family conflicts (e.g. Intel vs AMD, LOQ vs V15).
     - Base score: 30 pts.
     - Model/MPN match: +40 pts.
     - Spec match (RAM/Storage/Capacity): +20 pts on match, -25 pts penalty on conflict.
@@ -168,15 +209,19 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
     fk_title = candidate["title"].lower()
     fk_price = candidate.get("price")
 
-    # 1. Price corridor sanity check
+    # 1. Price corridor sanity check (realistic market corridor: 0.50x to 1.85x)
     if amazon_price and fk_price:
         ratio = fk_price / amazon_price
-        if ratio < 0.35 or ratio > 2.8:
+        if ratio < 0.50 or ratio > 1.85:
             return 0.0
 
     # 2. Strict Brand Match
     brand = amazon_sig.get("brand", "").lower()
     if not brand or brand not in fk_title:
+        return 0.0
+
+    # 3. Conflict Check (Intel vs AMD, LOQ vs V15, etc.)
+    if has_chipset_or_series_conflict(amazon_sig.get("raw_title", ""), candidate["title"]):
         return 0.0
 
     score = 30.0

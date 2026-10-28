@@ -348,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            renderProducts(data.products, productGrid, false);
+            renderProducts(data.products, productGrid, true);
 
         } catch (error) {
             errorMessage.textContent = error.message;

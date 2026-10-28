@@ -488,6 +488,9 @@ async def search_deals(
     # Parse
     products = parse_search_results(html)
 
+    for p in products:
+        p["deal_score"] = compute_deal_score(p)
+
     result = {
         "query": query,
         "page": page,
