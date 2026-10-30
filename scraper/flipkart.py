@@ -55,6 +55,45 @@ FLUFF_PATTERNS = [
 ]
 
 
+GENERIC_EXCLUDED_TOKENS = {
+    "IN-LINE", "TYPE-C", "ON-EAR", "OVER-EAR", "IN-EAR", "BUILT-IN",
+    "ANTI-GLARE", "ALL-DAY", "HANDS-FREE", "NOISE-CANCELLATION", "NO-COST",
+    "MICRO-EDGE", "FAST-CHARGE", "FAST-CHARGING", "DUAL-PAIRING", "DUAL-DEVICE",
+    "DUAL-TONE", "TRULY-WIRELESS", "TOUCH-CONTROL", "NOISE-CANCELLING",
+    "NOISE-ISOLATION", "NOISE-REDUCTION", "HI-RES", "BEE-RATED", "FHD", "WUXGA",
+    "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000", "1200"
+}
+
+
+def extract_audio_form_factor(title: str) -> str | None:
+    """Extract audio form factor (over_ear, in_ear, or neckband) to prevent cross-type mismatches."""
+    t = title.lower()
+    if re.search(r"\b(over[\s\-]?ear|on[\s\-]?ear|headphone)\b", t):
+        if not re.search(r"\b(earbud|earbuds|bud|buds|tws|neckband)\b", t):
+            return "over_ear"
+    if re.search(r"\b(neckband|collar)\b", t):
+        return "neckband"
+    if re.search(r"\b(earbud|earbuds|bud|buds|tws|in[\s\-]?ear|airpod|airdopes)\b", t):
+        return "in_ear"
+    return None
+
+
+def extract_device_model_numbers(title: str) -> set[str]:
+    """Extract alphanumeric device model codes (e.g. 300C, 211, FA506, 720N)."""
+    raw = re.findall(
+        r"\b([A-Z0-9]{2,}-[A-Z0-9]{2,}|\b[A-Z]{1,3}[0-9]{3,}[A-Z0-9]*\b|\b[0-9]{3,4}[A-Z]{1,3}\b|\b[0-9]{3,4}\b)",
+        title,
+        flags=re.IGNORECASE,
+    )
+    res = set()
+    for m in raw:
+        m_up = m.upper().strip()
+        if m_up not in GENERIC_EXCLUDED_TOKENS and len(m_up) >= 3:
+            if not m_up.endswith("W") and not m_up.endswith("V"):
+                res.add(m_up)
+    return res
+
+
 def extract_gpu(title: str) -> str | None:
     """Extract normalized dedicated GPU model from title."""
     t = title.lower()
@@ -202,18 +241,17 @@ def extract_product_signature(title: str) -> dict:
         title,
         flags=re.IGNORECASE,
     )
-    excluded_numbers = {"2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000"}
     models = []
     if series:
         models.append(series.upper())
 
     for m in model_patterns:
         m_up = m.upper().strip()
-        if m_up not in excluded_numbers and m_up not in models:
+        if m_up not in GENERIC_EXCLUDED_TOKENS and m_up not in models:
             models.append(m_up)
             if "-" in m_up:
                 base = m_up.split("-")[0].strip()
-                if len(base) >= 3 and base not in models:
+                if len(base) >= 3 and base not in GENERIC_EXCLUDED_TOKENS and base not in models:
                     models.append(base)
 
     # 4. Spec Extraction (RAM, Storage, Volume)
@@ -439,18 +477,41 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
     if amz_screen and fk_screen and abs(amz_screen - fk_screen) > 0.5:
         return True
 
-    # 9. Known series conflicts
+    # 9. Audio Form Factor Conflict (Over-Ear Headphones vs In-Ear Buds vs Neckband)
+    amz_form = extract_audio_form_factor(amz_title)
+    fk_form = extract_audio_form_factor(fk_title)
+    if amz_form and fk_form and amz_form != fk_form:
+        return True
+
+    # 10. Known Series Conflicts (Laptops, Smartwatches, and Audio)
     series_list = [
+        # Laptops
         "loq", "legion", "ideapad", "thinkpad", "thinkbook", "v15", "v14",
         "tuf", "rog", "zenbook", "vivobook",
         "victus", "pavilion", "omen", "envy", "spectre",
         "aspire", "swift", "predator", "nitro",
+        # Smartwatches
+        "ninja", "hurricane", "gladiator", "invincible", "visionary", "commando",
+        "wave", "lunar", "storm", "xtend", "matrix",
+        "colorfit", "pulse", "evolve", "caliber", "icon", "vortex",
+        # Audio
+        "bassheads", "rockerz", "airdopes", "nirvana",
     ]
     for s in series_list:
         if bool(re.search(rf"\b{s}\b", amz_lower)) and not bool(re.search(rf"\b{s}\b", fk_lower)):
             for other_s in series_list:
                 if other_s != s and bool(re.search(rf"\b{other_s}\b", fk_lower)):
                     return True
+
+    # 11. Numeric Device Model Code Conflict (e.g. 300C vs 211)
+    amz_models = extract_device_model_numbers(amz_title)
+    fk_models = extract_device_model_numbers(fk_title)
+    if amz_models and fk_models:
+        overlap = amz_models.intersection(fk_models)
+        if not overlap:
+            base_overlap = any(am in fm or fm in am for am in amz_models for fm in fk_models)
+            if not base_overlap:
+                return True
 
     return False
 

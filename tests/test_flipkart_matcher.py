@@ -323,3 +323,51 @@ def test_score_flipkart_match_accepts_exact_hardware_specs():
 
 
 
+
+
+def test_score_flipkart_match_rejects_audio_form_factor_mismatch():
+    """Over-ear headphones must NEVER match in-ear earbuds."""
+    amz_title = "CMF BY Nothing Over Ear Headphone Pro, Hi-Res+LDAC, 40mm Driver"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "CMF by Nothing Buds Pro 2 with 50 dB ANC, Spatial Audio, Dual Drivers",
+        "price": 3499.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=5499.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_model_code_mismatch_300c_vs_211():
+    """Boat Bassheads 300C must NEVER match Bassheads 211."""
+    amz_title = "Boat Bassheads 300C Wired Earphones, Type-C Jack, in-Line Mic"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "boAt BassHeads 211, 10mm Drivers, In-Line Mic Wired Earphones",
+        "price": 249.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=449.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_smartwatch_series_mismatch():
+    """Fire-Boltt Ninja must NEVER match Fire-Boltt Hurricane."""
+    amz_title = "Fire-Boltt Ninja Calling Pro Plus 1.83 inch Display Smartwatch"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Fire-Boltt Hurricane Air 1.26 Round Display Rotating Crown Smartwatch",
+        "price": 999.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=1299.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_audio_series_mismatch():
+    """boAt Bassheads wired must NEVER match boAt Rockerz bluetooth neckband."""
+    amz_title = "boAt Bassheads 225 Wired in Ear Earphone with Mic"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "boAt Rockerz 255 Pro+ Bluetooth Neckband with Mic",
+        "price": 999.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=556.0, candidate=candidate)
+    assert score == 0.0

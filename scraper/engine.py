@@ -383,6 +383,7 @@ async def _fetch_with_retry(url: str) -> str | None:
     Returns:
         HTML string on success, None on failure after all retries.
     """
+    global _session
     async with _scrape_semaphore:
         session = await _get_session()
 
@@ -410,7 +411,6 @@ async def _fetch_with_retry(url: str) -> str | None:
                         config.MAX_RETRIES,
                     )
                     # Reset session so retry gets a fresh connection & cookie state
-                    global _session
                     if _session is not None:
                         try:
                             await _session.close()
@@ -433,9 +433,17 @@ async def _fetch_with_retry(url: str) -> str | None:
                     config.MAX_RETRIES,
                     str(e),
                 )
+                # Reset dead/stalled connection session so retry gets a fresh TLS state
+                if _session is not None:
+                    try:
+                        await _session.close()
+                    except Exception:
+                        pass
+                    _session = None
                 if attempt < config.MAX_RETRIES - 1:
                     wait = config.BACKOFF_BASE ** (attempt + 1)
                     await asyncio.sleep(wait)
+                    session = await _get_session()
                 else:
                     return None
 
