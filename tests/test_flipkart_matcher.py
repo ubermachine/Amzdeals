@@ -371,3 +371,70 @@ def test_score_flipkart_match_rejects_audio_series_mismatch():
     }
     score = score_flipkart_match(sig, amazon_price=556.0, candidate=candidate)
     assert score == 0.0
+
+
+
+def test_score_flipkart_match_rejects_cpu_processor_mismatch_125h_vs_115u():
+    """Intel Core Ultra 125H must NEVER match 115U."""
+    amz_title = 'Acer Swift Pro AI PC,Intel Core Ultra 5 Processor 125H,Office 2024,16GB LPDDR5 RAM/512 SSD,14" WUXGA Display'
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer Swift Neo 14 Office 2024 Intel Core Ultra 5 115U - (16 GB/512 GB SSD) SFN14-54H Laptop",
+        "price": 73990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=67300.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_laptop_subseries_mismatch_aspire_one_vs_aspire_15():
+    """Acer Aspire One must NEVER match Aspire 15."""
+    amz_title = 'Acer Smartchoice Aspire One, AMD Ryzen 3-7320U, 8GB LPDDR5 RAM/ 512GB SSD, 14.0" TN HD Display, A114-43 Laptop'
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer Aspire 15 AMD Ryzen 3 Quad Core 7330U - (8 GB/512 GB SSD) AS15 42 / A325 42 Laptop",
+        "price": 45623.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=45990.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_connectivity_mismatch_5g_vs_4g():
+    """5G phone must NEVER match non-5G / 4G model."""
+    amz_title = "Redmi 13C 5G (Starlight Black, 4GB RAM, 128GB Storage)"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "REDMI 13C (Starshine Green, 128 GB) (4 GB RAM)",
+        "price": 7999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=10499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_mobile_tier_mismatch_pro_plus_vs_pro():
+    """Pro+ phone must NEVER match standard Pro model."""
+    amz_title = "Realme 12 Pro+ 5G (Submarine Blue, 8GB RAM, 256GB Storage)"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Realme 12 Pro 5G (Navigator Beige, 8GB RAM, 256GB Storage)",
+        "price": 23999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=29999.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_appliance_wattage_mismatch():
+    """750W appliance must NEVER match 500W appliance."""
+    amz_title = "Philips HL7756/00 Mixer Grinder 750 Watt, 3 Stainless Steel Jars"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Philips HL1606/03 500 W Mixer Grinder",
+        "price": 2199.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=3499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_appliance_capacity_mismatch():
+    """1.8L kettle must NEVER match 1.2L kettle."""
+    amz_title = "Pigeon by Stovekraft Cruise 1.8 Litre Stainless Steel Electric Kettle"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Pigeon by Stovekraft 1.2 L Electric Kettle",
+        "price": 599.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=799.0, candidate=candidate) == 0.0

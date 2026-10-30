@@ -39,6 +39,10 @@ SERIES_PATTERNS = [
     r"predator helios", r"predator", r"nitro \d+", r"nitro v", r"nitro",
     r"galaxy s\d+(?: ultra| plus|\+)?", r"galaxy z (?:fold|flip)\d*", r"galaxy a\d+", r"galaxy m\d+",
     r"nord ce\d*(?: lite)?", r"nord \d+",
+    r"narzo\s*\d+[a-z]*", r"redmi note\s*\d+[a-z]*", r"redmi\s*\d+[a-z]*",
+    r"realme\s*\d+[a-z]*", r"poco\s*[xmf]\d+[a-z]*",
+    r"moto g\d+[a-z]*", r"moto edge\s*\d+[a-z]*",
+    r"iqoo\s*z\d+[a-z]*", r"iqoo\s*neo\s*\d+[a-z]*",
     r"airdopes \d+(?: pro| plus| max)?", r"rockerz \d+(?: pro| plus)?",
     r"wh-ch\d+[a-z]*", r"wf-c\d+[a-z]*", r"wh-\d+[a-z]*",
     r"chromebook \d+", r"chromebook",
@@ -61,7 +65,13 @@ GENERIC_EXCLUDED_TOKENS = {
     "MICRO-EDGE", "FAST-CHARGE", "FAST-CHARGING", "DUAL-PAIRING", "DUAL-DEVICE",
     "DUAL-TONE", "TRULY-WIRELESS", "TOUCH-CONTROL", "NOISE-CANCELLING",
     "NOISE-ISOLATION", "NOISE-REDUCTION", "HI-RES", "BEE-RATED", "FHD", "WUXGA",
-    "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000", "1200"
+    "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000", "1200",
+    "128", "256", "512", "1024", "2048", "1TB", "2TB",
+    "128GB", "256GB", "512GB", "1024GB", "2048GB",
+    "4GB", "6GB", "8GB", "12GB", "16GB", "18GB", "24GB", "32GB", "36GB", "48GB", "64GB",
+    "32G", "64G", "128G", "256G", "512G",
+    "1080P", "1440P", "2160P", "144HZ", "120HZ", "165HZ", "240HZ", "60HZ",
+    "40MM", "50MM", "10MM", "12MM", "13MM", "5G", "4G", "3G", "LTE",
 }
 
 
@@ -78,10 +88,67 @@ def extract_audio_form_factor(title: str) -> str | None:
     return None
 
 
+def extract_device_tier(title: str) -> str | None:
+    """Extract mobile/device tier suffix (e.g. Pro+, Pro Max, Ultra, Pro, Plus, Lite)."""
+    t = title.lower()
+    if re.search(r"\b(?:pro\s*\+|pro\s*plus)(?=[^a-z0-9]|$)", t):
+        return "pro_plus"
+    if re.search(r"\bpro\s*max\b", t):
+        return "pro_max"
+    if re.search(r"\bultra\b", t):
+        return "ultra"
+    if re.search(r"\bpro\b", t):
+        return "pro"
+    if re.search(r"\bplus\b", t):
+        return "plus"
+    if re.search(r"\b(?:lite|fe|se)\b", t):
+        return "lite"
+    return None
+
+
+def extract_cpu_model(title: str) -> str | None:
+    """Extract specific CPU processor model code (e.g. 125H, 115U, 7320U, 7330U, 12450H, 13420H, 120U, 100U)."""
+    t = title.lower()
+    m = re.search(r"\b(?:ultra\s*[3579]\s+)?([12][0-9]{2}[huv])\b", t)
+    if m:
+        return m.group(1).upper()
+    m = re.search(r"\b(?:core\s*[357]\s+)?([12][0-9]{2}u)\b", t)
+    if m:
+        return m.group(1).upper()
+    m = re.search(r"\b(?:i[3579][\s\-]?)?(1[1-4][0-9]{3}[a-z]{1,2})\b", t)
+    if m:
+        return m.group(1).upper()
+    m = re.search(r"\b(?:ryzen\s*[3579][\s\-]?)?([3578][0-9]{3}[a-z]{1,2})\b", t)
+    if m:
+        return m.group(1).upper()
+    m = re.search(r"\b(n[14][0-9]{2,3}|n95|n200)\b", t)
+    if m:
+        return m.group(1).upper()
+    return None
+
+
+def extract_wattage(title: str) -> int | None:
+    """Extract appliance power wattage (e.g. 500W, 750W, 1000W, 1200W, 2000W)."""
+    t = title.lower()
+    m = re.search(r"\b([4-9][0-9]{2}|1[0-9]{3}|2[0-9]{3})\s*(?:w|watt|watts)\b", t)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def extract_capacity_liters(title: str) -> float | None:
+    """Extract appliance volume capacity in Litres (e.g. 1.2L, 1.5L, 1.8L, 3L, 4.5L, 5L, 6L)."""
+    t = title.lower()
+    m = re.search(r"\b([0-9](?:\.[0-9])?)\s*(?:l|ltr|litre|litres|liter|liters)\b", t)
+    if m:
+        return float(m.group(1))
+    return None
+
+
 def extract_device_model_numbers(title: str) -> set[str]:
     """Extract alphanumeric device model codes (e.g. 300C, 211, FA506, 720N)."""
     raw = re.findall(
-        r"\b([A-Z0-9]{2,}-[A-Z0-9]{2,}|\b[A-Z]{1,3}[0-9]{3,}[A-Z0-9]*\b|\b[0-9]{3,4}[A-Z]{1,3}\b|\b[0-9]{3,4}\b)",
+        r"\b([A-Z0-9]{2,}-[A-Z0-9]{2,}|\b[A-Z]{1,3}[0-9]{2,}[A-Z0-9]*\b|\b[0-9]{1,4}[A-Z]{1,3}\b|\b[0-9]{3,4}\b)",
         title,
         flags=re.IGNORECASE,
     )
@@ -89,8 +156,9 @@ def extract_device_model_numbers(title: str) -> set[str]:
     for m in raw:
         m_up = m.upper().strip()
         if m_up not in GENERIC_EXCLUDED_TOKENS and len(m_up) >= 3:
-            if not m_up.endswith("W") and not m_up.endswith("V"):
-                res.add(m_up)
+            if not m_up.endswith("W") and not m_up.endswith("V") and not m_up.endswith("KG"):
+                if not extract_cpu_model(m_up):
+                    res.add(m_up)
     return res
 
 
@@ -172,10 +240,25 @@ def extract_storage_gb(title: str) -> int | None:
 def extract_screen_size(title: str) -> float | None:
     """Extract laptop or TV screen display size in inches."""
     t = title.lower()
-    m = re.search(r"\b(13\.3|14|15\.6|16|17\.3)\s*(?:\"|\'\'|inch|\-inch|\s*fhd|\s*ips|\s*oled|\s*display|\s*screen|\s*laptop)\b", t)
+    # Match inches (e.g. 14", 14.0", 15.6", 13.3", 16", 17.3", 11.6")
+    m = re.search(r"\b(11\.6|12\.[24]|13\.3|14(?:\.0)?|15\.3|15\.6|16(?:\.0)?|17\.3)\s*(?:\"|\'\'|inch|\-inch|\s*in\b|\s*fhd|\s*ips|\s*oled|\s*display|\s*screen|\s*laptop)", t)
     if m:
-        return float(m.group(1))
-    m = re.search(r"\b(32|40|43|50|55|65|75|85)\s*(?:\"|\'\'|inch|\-inch|\s*led|\s*tv|\s*smart)\b", t)
+        val = float(m.group(1))
+        return 14.0 if val == 14 else (16.0 if val == 16 else val)
+    # Series name class inference (e.g. Aspire 15 -> 15.6, Vivobook 14 -> 14.0, Vivobook 15 -> 15.6, Swift 14 -> 14.0)
+    m = re.search(r"\b(?:vivobook|ideapad|aspire|swift|inspiron|tuf|victus|legion|zenbook|expertbook|latitude)\s*(14|15|16|17)\b", t)
+    if m:
+        num = int(m.group(1))
+        if num == 14:
+            return 14.0
+        elif num == 15:
+            return 15.6
+        elif num == 16:
+            return 16.0
+        elif num == 17:
+            return 17.3
+    # TVs & Monitors
+    m = re.search(r"\b(24|27|32|40|43|50|55|65|75|85)\s*(?:\"|\'\'|inch|\-inch|\s*in\b|\s*led|\s*tv|\s*smart|\s*monitor|\s*oled|\s*4k)", t)
     if m:
         return float(m.group(1))
     return None
@@ -483,7 +566,59 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
     if amz_form and fk_form and amz_form != fk_form:
         return True
 
-    # 10. Known Series Conflicts (Laptops, Smartwatches, and Audio)
+    # 10. CPU Processor Model Conflict (e.g. 125H vs 115U, 7320U vs 7330U, 12450H vs 13420H)
+    amz_cpu = extract_cpu_model(amz_title)
+    fk_cpu = extract_cpu_model(fk_title)
+    if amz_cpu and fk_cpu and amz_cpu != fk_cpu:
+        return True
+
+    # 11. Mobile / Tablet Connectivity Conflict (5G vs 4G)
+    has_amz_5g = bool(re.search(r"\b5g\b", amz_lower)) and not bool(re.search(r"\b5\s*g(?:ms|ram|rams)\b", amz_lower))
+    has_fk_5g = bool(re.search(r"\b5g\b", fk_lower)) and not bool(re.search(r"\b5\s*g(?:ms|ram|rams)\b", fk_lower))
+    if has_amz_5g != has_fk_5g:
+        mobile_tech = bool(re.search(r"\b(phone|mobile|smartphone|redmi|realme|samsung|oneplus|vivo|oppo|poco|motorola|moto|iqoo|xiaomi|infinix|narzo|tecno|galaxy)\b", amz_lower + " " + fk_lower))
+        if mobile_tech:
+            return True
+
+    # 12. Mobile / Device Tier Conflict (e.g. Pro+ vs Pro vs Ultra vs Plus vs Lite)
+    amz_tier = extract_device_tier(amz_title)
+    fk_tier = extract_device_tier(fk_title)
+    if amz_tier and fk_tier and amz_tier != fk_tier:
+        return True
+
+    # 13. Appliance Wattage Conflict (e.g. 500W vs 750W vs 1000W)
+    amz_watt = extract_wattage(amz_title)
+    fk_watt = extract_wattage(fk_title)
+    if amz_watt and fk_watt and amz_watt != fk_watt:
+        return True
+
+    # 14. Appliance Volume Capacity Conflict (e.g. 1.8L vs 3.0L)
+    amz_cap = extract_capacity_liters(amz_title)
+    fk_cap = extract_capacity_liters(fk_title)
+    if amz_cap and fk_cap and abs(amz_cap - fk_cap) > 0.3:
+        return True
+
+    # 15. Laptop Sub-series Conflicts
+    laptop_subseries = [
+        # Acer Aspire sub-series
+        ["aspire one", "aspire lite", "aspire 3", "aspire 5", "aspire 7"],
+        # Acer Swift sub-series
+        ["swift pro", "swift neo", "swift go", "swift air"],
+        # Asus Vivobook sub-series
+        ["vivobook go", "vivobook s", "vivobook pro"],
+        # Lenovo IdeaPad sub-series
+        ["ideapad slim 1", "ideapad slim 3", "ideapad slim 5", "ideapad pro"],
+        # Asus TUF sub-series
+        ["tuf a15", "tuf f15", "tuf a16", "tuf f16"],
+    ]
+    for group in laptop_subseries:
+        for sub in group:
+            if sub in amz_lower and sub not in fk_lower:
+                for other_sub in group:
+                    if other_sub != sub and other_sub in fk_lower:
+                        return True
+
+    # 16. Known Brand-Level Series Conflicts (Laptops, Smartwatches, and Audio)
     series_list = [
         # Laptops
         "loq", "legion", "ideapad", "thinkpad", "thinkbook", "v15", "v14",
@@ -503,7 +638,7 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
                 if other_s != s and bool(re.search(rf"\b{other_s}\b", fk_lower)):
                     return True
 
-    # 11. Numeric Device Model Code Conflict (e.g. 300C vs 211)
+    # 17. Numeric Device Model Code Conflict (e.g. 300C vs 211, A114 vs A325)
     amz_models = extract_device_model_numbers(amz_title)
     fk_models = extract_device_model_numbers(fk_title)
     if amz_models and fk_models:

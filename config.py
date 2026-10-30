@@ -9,7 +9,7 @@ CACHE_TTL_SECONDS = 1800  # 30 minutes
 CACHE_DB_PATH = "cache.db"
 
 # Request
-REQUEST_TIMEOUT = 15  # seconds
+REQUEST_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
 BACKOFF_BASE = 2  # exponential backoff: 2s, 4s, 8s
 
