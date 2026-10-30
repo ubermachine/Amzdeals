@@ -55,6 +55,110 @@ FLUFF_PATTERNS = [
 ]
 
 
+def extract_gpu(title: str) -> str | None:
+    """Extract normalized dedicated GPU model from title."""
+    t = title.lower()
+    # NVIDIA RTX (e.g. RTX 2050, 3050, 3050 Ti, 4050, 4060, 4070, 5050)
+    m = re.search(r"\b(rtx\s*[2-5]0[5-9]0(?:\s*ti)?)\b", t)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1).strip())
+    # NVIDIA GTX (e.g. GTX 1650, 1660, 1660 Ti, 1050, 1060)
+    m = re.search(r"\b(gtx\s*(?:1650(?:\s*ti)?|1660(?:\s*ti)?|1050|1060))\b", t)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1).strip())
+    # Intel Arc (e.g. Arc A350M, Arc A530M, Arc A550M)
+    m = re.search(r"\b(arc\s*a[357][0-9]0m?)\b", t)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1).strip())
+    # AMD Radeon RX dedicated (e.g. RX 6500M, RX 7600S)
+    m = re.search(r"\b(rx\s*[6-7][0-9]00[a-z]*)\b", t)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1).strip())
+    return None
+
+
+def has_dedicated_gpu(title: str) -> bool:
+    """Check if title explicitly specifies a dedicated gaming GPU."""
+    t = title.lower()
+    if extract_gpu(t):
+        return True
+    if re.search(r"\b(?:geforce|nvidia|dedicated graphics|[468]\s*gb graphics)\b", t):
+        return True
+    return False
+
+
+def extract_ram_gb(title: str) -> int | None:
+    """Extract system RAM capacity in GB without confusing with storage/screen."""
+    t = title.lower()
+    # Slash notation in laptops: (16GB/512GB, 16 GB / 512 GB, 16GB / 1TB, etc.)
+    m = re.search(r"\b(4|6|8|12|16|18|24|32|36|48|64)\s*gb?\s*\/\s*(?:128|256|512|1tb|2tb)", t)
+    if m:
+        return int(m.group(1))
+    # DDR / LPDDR / RAM / Unified Memory
+    m = re.search(r"\b(4|6|8|12|16|18|24|32|36|48|64)\s*(?:gb)?\s*(?:ddr[45]x?|lpddr[45]x?|ram|unified memory)\b", t)
+    if m:
+        return int(m.group(1))
+    # Flipkart title format: (16 GB/512 GB SSD/...)
+    m = re.search(r"\(\s*(4|6|8|12|16|18|24|32|36|48|64)\s*gb\s*\/", t)
+    if m:
+        return int(m.group(1))
+    # Mobile RAM: e.g. 8GB RAM, 8 GB RAM, 8GB+128GB
+    m = re.search(r"\b(4|6|8|12|16)\s*gb\s*ram\b", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\b(4|6|8|12|16)\s*gb\s*\+\s*(?:64|128|256|512)\b", t)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def extract_storage_gb(title: str) -> int | None:
+    """Extract primary SSD/storage capacity in GB."""
+    t = title.lower()
+    # 1TB or 2TB
+    m = re.search(r"\b(1|2)\s*tb\b", t)
+    if m:
+        return int(m.group(1)) * 1024
+    # Slash notation storage: e.g. /512GB or / 512 GB SSD
+    m = re.search(r"\/\s*(128|256|512)\s*(?:gb)?", t)
+    if m:
+        return int(m.group(1))
+    # Explicit SSD / ROM / Storage
+    m = re.search(r"\b(128|256|512)\s*(?:gb)?\s*(?:ssd|hdd|emmc|rom|storage|nvme|ufs)\b", t)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def extract_screen_size(title: str) -> float | None:
+    """Extract laptop or TV screen display size in inches."""
+    t = title.lower()
+    m = re.search(r"\b(13\.3|14|15\.6|16|17\.3)\s*(?:\"|\'\'|inch|\-inch|\s*fhd|\s*ips|\s*oled|\s*display|\s*screen|\s*laptop)\b", t)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"\b(32|40|43|50|55|65|75|85)\s*(?:\"|\'\'|inch|\-inch|\s*led|\s*tv|\s*smart)\b", t)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def extract_cpu_gen(title: str) -> str | None:
+    """Extract CPU architecture generation (e.g. 12th, 13th, Core Ultra, Ryzen 7000)."""
+    t = title.lower()
+    if "core ultra" in t:
+        return "core_ultra"
+    m = re.search(r"\b(1[1-4])th\s*gen\b", t)
+    if m:
+        return f"{m.group(1)}th"
+    m = re.search(r"\b(1[1-4][0-9]{3}[a-z]*)\b", t)
+    if m:
+        return f"{m.group(1)[:2]}th"
+    m = re.search(r"\bryzen\s*[3579]\s*([578][0-9]{3}[a-z]*)\b", t)
+    if m:
+        return f"ryzen_{m.group(1)[0]}000"
+    return None
+
+
 def extract_product_signature(title: str) -> dict:
     """Extract brand, series, alphanumeric model numbers, specs, and search query from title."""
     clean_text = title
@@ -116,12 +220,24 @@ def extract_product_signature(title: str) -> dict:
     raw_specs = re.findall(r"\b([0-9]+(?:\.[0-9]+)?\s*(?:GB|TB|MB|L|ml))\b", title, flags=re.IGNORECASE)
     specs = {s.upper().replace(" ", "") for s in raw_specs}
 
+    # Dedicated GPU and RAM extraction for query precision
+    gpu = extract_gpu(title)
+    ram = extract_ram_gb(title)
+
     # 5. Formulate targeted search query for Flipkart
     query_parts = []
     if brand:
         query_parts.append(brand)
     if series:
         query_parts.append(series)
+
+    # Inject GPU (e.g. rtx 4050, rtx 3050) to target exact graphical tier
+    if gpu:
+        query_parts.append(gpu)
+
+    # Inject RAM (e.g. 16gb, 8gb) to avoid variant mix-ups
+    if ram:
+        query_parts.append(f"{ram}gb")
 
     for m in models:
         m_str = str(m)
@@ -150,6 +266,8 @@ def extract_product_signature(title: str) -> dict:
         "series": series,
         "models": models,
         "specs": specs,
+        "gpu": gpu,
+        "ram": ram,
         "search_query": search_query,
         "raw_title": title,
     }
@@ -282,7 +400,46 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
                 if other != tier and bool(re.search(rf"\b{other}\b", fk_lower)):
                     return True
 
-    # 3. Known series conflicts
+    # 3. CPU Generation Conflict (e.g. 12th Gen vs 13th Gen, Core Ultra vs 13th)
+    amz_gen = extract_cpu_gen(amz_title)
+    fk_gen = extract_cpu_gen(fk_title)
+    if amz_gen and fk_gen and amz_gen != fk_gen:
+        return True
+
+    # 4. GPU Model Conflict (e.g. RTX 3050 vs RTX 4050, RTX 2050 vs 3050)
+    amz_gpu = extract_gpu(amz_title)
+    fk_gpu = extract_gpu(fk_title)
+    if amz_gpu and fk_gpu and amz_gpu != fk_gpu:
+        return True
+
+    # 5. Dedicated vs Integrated GPU Conflict
+    amz_has_ded_gpu = has_dedicated_gpu(amz_title)
+    fk_has_ded_gpu = has_dedicated_gpu(fk_title)
+    if amz_has_ded_gpu != fk_has_ded_gpu:
+        if amz_has_ded_gpu and ("integrated" in fk_lower or "iris" in fk_lower or "uhd" in fk_lower or "graphics card: integrated" in fk_lower):
+            return True
+        if fk_has_ded_gpu and ("integrated" in amz_lower or "iris" in amz_lower or "uhd" in amz_lower):
+            return True
+
+    # 6. RAM Capacity Conflict (e.g. 8GB vs 16GB, 16GB vs 32GB)
+    amz_ram = extract_ram_gb(amz_title)
+    fk_ram = extract_ram_gb(fk_title)
+    if amz_ram and fk_ram and amz_ram != fk_ram:
+        return True
+
+    # 7. Primary Storage Capacity Conflict (e.g. 512GB vs 1TB SSD)
+    amz_storage = extract_storage_gb(amz_title)
+    fk_storage = extract_storage_gb(fk_title)
+    if amz_storage and fk_storage and amz_storage != fk_storage:
+        return True
+
+    # 8. Display Screen Size Conflict (e.g. 14" vs 15.6", 43" vs 55")
+    amz_screen = extract_screen_size(amz_title)
+    fk_screen = extract_screen_size(fk_title)
+    if amz_screen and fk_screen and abs(amz_screen - fk_screen) > 0.5:
+        return True
+
+    # 9. Known series conflicts
     series_list = [
         "loq", "legion", "ideapad", "thinkpad", "thinkbook", "v15", "v14",
         "tuf", "rog", "zenbook", "vivobook",
@@ -304,7 +461,7 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
     Strict rules:
     - Must be within realistic price corridor (0.50x to 1.85x) or rejected (0.0).
     - Brand must match or rejected (0.0).
-    - No chipset or model-family conflicts (e.g. Intel vs AMD, LOQ vs V15).
+    - Zero tolerance hardware & spec conflict check (RAM, GPU, CPU gen, storage, screen size, series).
     - Base score: 30 pts.
     - Model/MPN/Series match: +40 pts.
     - Spec match (RAM/Storage/Capacity): +20 pts on match, -25 pts penalty on conflict.
@@ -324,7 +481,7 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
     if not brand or brand not in fk_title:
         return 0.0
 
-    # 3. Conflict Check (Intel vs AMD, LOQ vs V15, etc.)
+    # 3. Conflict Check (RAM, GPU, CPU Gen, Series, Display Size)
     if has_chipset_or_series_conflict(amazon_sig.get("raw_title", ""), candidate["title"]):
         return 0.0
 

@@ -262,4 +262,64 @@ def test_parse_flipkart_html_beautifulsoup_fallback():
     assert "TESTPID123" in candidates[0]["url"]
 
 
+def test_score_flipkart_match_rejects_ram_mismatch():
+    """8GB RAM laptop must NEVER match a 16GB RAM laptop."""
+    amz_title = "ASUS TUF Gaming A15, 16GB RAM, 512GB SSD, RTX 4050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 - (8 GB/512 GB SSD/RTX 4050)",
+        "price": 68990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=74990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_gpu_mismatch_3050_vs_4050():
+    """RTX 3050 laptop must NEVER match an RTX 4050 laptop."""
+    amz_title = "ASUS TUF Gaming A15, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 - (16 GB/512 GB SSD/RTX 4050)",
+        "price": 76990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=61990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_gpu_mismatch_2050_vs_3050():
+    """RTX 2050 laptop must NEVER match an RTX 3050 laptop."""
+    amz_title = "Lenovo LOQ 12th Gen i5-12450HX, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo LOQ Intel Core i5 12th Gen - (16 GB/512 GB SSD/RTX 2050)",
+        "price": 54990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=64990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_dedicated_vs_integrated_gpu():
+    """Laptop with RTX 3050 must NEVER match a model with integrated Intel UHD/Iris graphics."""
+    amz_title = "Lenovo LOQ 12th Gen i5-12450HX, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo LOQ Intel Core i5 12th Gen - (16 GB/512 GB SSD/Integrated Intel UHD Graphics)",
+        "price": 49990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=64990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_accepts_exact_hardware_specs():
+    """Identical brand, series, RAM, storage, and GPU yields confirmed high match score."""
+    amz_title = "ASUS TUF Gaming A15, 16GB DDR5, 512GB SSD, NVIDIA GeForce RTX 4050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 7735HS - (16 GB/512 GB SSD/NVIDIA GeForce RTX 4050)",
+        "price": 73990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=74990.0, candidate=candidate)
+    assert score >= 85.0
+
+
 
