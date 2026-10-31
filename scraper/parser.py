@@ -1,9 +1,13 @@
 """Parse Amazon.in search result HTML into structured product data."""
 
+import json
 import re
+import ollama
 import statistics
+import math
 from bs4 import BeautifulSoup
-
+import numpy as np
+from ollama import Client
 
 def _parse_price(text: str | None) -> float | None:
     """Extract numeric price from text like '₹239' or '₹1,999.00'."""
@@ -158,8 +162,36 @@ def extract_pack_count(title: str | None) -> int:
             return 1
     return 1
 
+def calculate_score(product, score):
 
-def parse_search_results(html: str) -> list[dict]:
+    rating = product.get("rating") or 0
+    review_count = product.get("review_count") or 0
+    discount_pct = product.get("discount_pct") or 0
+
+    rating_score = (
+        rating *
+        min(review_count / 1000, 1)
+    ) / 5
+
+    review_score = min(
+        math.log10(review_count + 1) / 5,
+        1.0
+    )
+
+    discount_score = discount_pct / 100
+
+    final_score = (
+        score * 0.50 +
+        rating_score * 0.25 +
+        review_score * 0.10 +
+        discount_score * 0.15
+    )
+    
+    print(final_score)
+
+    return round(final_score, 4)
+
+def parse_search_results(html: str, query: str) -> list[dict]:
     """Parse Amazon.in search results HTML and return structured product data.
 
     Args:
@@ -170,6 +202,10 @@ def parse_search_results(html: str) -> list[dict]:
         original_price, discount_pct, rating, review_count, image_url,
         product_url, is_prime, coupon.
     """
+    
+    
+    
+    
     soup = BeautifulSoup(html, "lxml")
     products = []
 
@@ -347,5 +383,71 @@ def parse_search_results(html: str) -> list[dict]:
             p["is_true_deal"] = True
         else:
             p["is_true_deal"] = False
+    
+    product_texts = [
+        f"""{p['asin']} 
+            Name {p['title']} 
+            Current Price {p['current_price']} 
+            Original Price {p['original_price']} 
+            Rating {p['rating']}
+            Discount percent {p['discount_pct']}
+            Review Count {p['review_count']},
+            Image url {p['image_url']},
+            Product url {p['product_url']},
+            Is prime {p['is_prime']},
+            Coupon {p['coupon']},
+            Badge {p['badge']}"""
+        for p in products
+    ]
+    
+    response1 = ollama.embed(
+    model="nomic-embed-text",
+    input=product_texts
+   )
+        
+    response2 = ollama.embed(
+        model="nomic-embed-text",
+        input=query
+       )
+    
+    product_embeddings = response1["embeddings"]
+    query_embedding = response2["embeddings"]
+     
+    scores = []
 
-    return products
+    for i, embedding in enumerate(product_embeddings):
+
+        similarity = np.dot(query_embedding,embedding) / (np.linalg.norm(query_embedding) * np.linalg.norm(embedding))
+
+        scores.append(
+            {
+                "product": products[i],
+                "score": similarity.item()
+            }
+        )
+        
+    scores.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    top_products = scores[:10]
+    
+    avg_score = statistics.mean([
+    calculate_score(p["product"], p["score"])
+    for p in top_products
+])
+    
+    filtered_products = list(filter(lambda w: w["score"] >= avg_score, top_products))
+    
+    filtered_asins = {
+    item["product"]["asin"]
+    for item in filtered_products
+    }
+
+    matched_products = [
+    item for item in products
+    if item["asin"] in filtered_asins
+  ]
+
+    return matched_products
