@@ -315,6 +315,9 @@ async def search_category_deals(
     cached = await cache.get(cache_key)
     if cached is not None:
         cached["cached"] = True
+        if len(cached.get("products", [])) > config.TOP_DEALS_LIMIT:
+            cached["products"] = cached["products"][: config.TOP_DEALS_LIMIT]
+            cached["total_results"] = len(cached["products"])
         return cached
 
     # Look up category metadata for price floors and true deal calibration
@@ -570,6 +573,9 @@ async def search_deals(
     cached = await cache.get(cache_key)
     if cached is not None:
         cached["cached"] = True
+        if len(cached.get("products", [])) > config.TOP_DEALS_LIMIT:
+            cached["products"] = cached["products"][: config.TOP_DEALS_LIMIT]
+            cached["total_results"] = len(cached["products"])
         return cached
 
     # Throttle: random delay before hitting Amazon
