@@ -262,4 +262,239 @@ def test_parse_flipkart_html_beautifulsoup_fallback():
     assert "TESTPID123" in candidates[0]["url"]
 
 
+def test_score_flipkart_match_rejects_ram_mismatch():
+    """8GB RAM laptop must NEVER match a 16GB RAM laptop."""
+    amz_title = "ASUS TUF Gaming A15, 16GB RAM, 512GB SSD, RTX 4050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 - (8 GB/512 GB SSD/RTX 4050)",
+        "price": 68990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=74990.0, candidate=candidate)
+    assert score == 0.0
 
+
+def test_score_flipkart_match_rejects_gpu_mismatch_3050_vs_4050():
+    """RTX 3050 laptop must NEVER match an RTX 4050 laptop."""
+    amz_title = "ASUS TUF Gaming A15, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 - (16 GB/512 GB SSD/RTX 4050)",
+        "price": 76990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=61990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_gpu_mismatch_2050_vs_3050():
+    """RTX 2050 laptop must NEVER match an RTX 3050 laptop."""
+    amz_title = "Lenovo LOQ 12th Gen i5-12450HX, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo LOQ Intel Core i5 12th Gen - (16 GB/512 GB SSD/RTX 2050)",
+        "price": 54990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=64990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_dedicated_vs_integrated_gpu():
+    """Laptop with RTX 3050 must NEVER match a model with integrated Intel UHD/Iris graphics."""
+    amz_title = "Lenovo LOQ 12th Gen i5-12450HX, 16GB RAM, 512GB SSD, RTX 3050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo LOQ Intel Core i5 12th Gen - (16 GB/512 GB SSD/Integrated Intel UHD Graphics)",
+        "price": 49990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=64990.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_accepts_exact_hardware_specs():
+    """Identical brand, series, RAM, storage, and GPU yields confirmed high match score."""
+    amz_title = "ASUS TUF Gaming A15, 16GB DDR5, 512GB SSD, NVIDIA GeForce RTX 4050"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "ASUS TUF Gaming A15 AMD Ryzen 7 7735HS - (16 GB/512 GB SSD/NVIDIA GeForce RTX 4050)",
+        "price": 73990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=74990.0, candidate=candidate)
+    assert score >= 85.0
+
+
+
+
+
+def test_score_flipkart_match_rejects_audio_form_factor_mismatch():
+    """Over-ear headphones must NEVER match in-ear earbuds."""
+    amz_title = "CMF BY Nothing Over Ear Headphone Pro, Hi-Res+LDAC, 40mm Driver"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "CMF by Nothing Buds Pro 2 with 50 dB ANC, Spatial Audio, Dual Drivers",
+        "price": 3499.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=5499.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_model_code_mismatch_300c_vs_211():
+    """Boat Bassheads 300C must NEVER match Bassheads 211."""
+    amz_title = "Boat Bassheads 300C Wired Earphones, Type-C Jack, in-Line Mic"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "boAt BassHeads 211, 10mm Drivers, In-Line Mic Wired Earphones",
+        "price": 249.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=449.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_smartwatch_series_mismatch():
+    """Fire-Boltt Ninja must NEVER match Fire-Boltt Hurricane."""
+    amz_title = "Fire-Boltt Ninja Calling Pro Plus 1.83 inch Display Smartwatch"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Fire-Boltt Hurricane Air 1.26 Round Display Rotating Crown Smartwatch",
+        "price": 999.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=1299.0, candidate=candidate)
+    assert score == 0.0
+
+
+def test_score_flipkart_match_rejects_audio_series_mismatch():
+    """boAt Bassheads wired must NEVER match boAt Rockerz bluetooth neckband."""
+    amz_title = "boAt Bassheads 225 Wired in Ear Earphone with Mic"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "boAt Rockerz 255 Pro+ Bluetooth Neckband with Mic",
+        "price": 999.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=556.0, candidate=candidate)
+    assert score == 0.0
+
+
+
+def test_score_flipkart_match_rejects_cpu_processor_mismatch_125h_vs_115u():
+    """Intel Core Ultra 125H must NEVER match 115U."""
+    amz_title = 'Acer Swift Pro AI PC,Intel Core Ultra 5 Processor 125H,Office 2024,16GB LPDDR5 RAM/512 SSD,14" WUXGA Display'
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer Swift Neo 14 Office 2024 Intel Core Ultra 5 115U - (16 GB/512 GB SSD) SFN14-54H Laptop",
+        "price": 73990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=67300.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_laptop_subseries_mismatch_aspire_one_vs_aspire_15():
+    """Acer Aspire One must NEVER match Aspire 15."""
+    amz_title = 'Acer Smartchoice Aspire One, AMD Ryzen 3-7320U, 8GB LPDDR5 RAM/ 512GB SSD, 14.0" TN HD Display, A114-43 Laptop'
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer Aspire 15 AMD Ryzen 3 Quad Core 7330U - (8 GB/512 GB SSD) AS15 42 / A325 42 Laptop",
+        "price": 45623.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=45990.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_connectivity_mismatch_5g_vs_4g():
+    """5G phone must NEVER match non-5G / 4G model."""
+    amz_title = "Redmi 13C 5G (Starlight Black, 4GB RAM, 128GB Storage)"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "REDMI 13C (Starshine Green, 128 GB) (4 GB RAM)",
+        "price": 7999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=10499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_mobile_tier_mismatch_pro_plus_vs_pro():
+    """Pro+ phone must NEVER match standard Pro model."""
+    amz_title = "Realme 12 Pro+ 5G (Submarine Blue, 8GB RAM, 256GB Storage)"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Realme 12 Pro 5G (Navigator Beige, 8GB RAM, 256GB Storage)",
+        "price": 23999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=29999.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_appliance_wattage_mismatch():
+    """750W appliance must NEVER match 500W appliance."""
+    amz_title = "Philips HL7756/00 Mixer Grinder 750 Watt, 3 Stainless Steel Jars"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Philips HL1606/03 500 W Mixer Grinder",
+        "price": 2199.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=3499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_appliance_capacity_mismatch():
+    """1.8L kettle must NEVER match 1.2L kettle."""
+    amz_title = "Pigeon by Stovekraft Cruise 1.8 Litre Stainless Steel Electric Kettle"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Pigeon by Stovekraft 1.2 L Electric Kettle",
+        "price": 599.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=799.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_storage_capacity_mismatch_1tb_vs_500gb():
+    """1TB SSD must NEVER match 500GB SSD."""
+    amz_title = "Crucial P3 Plus 1TB PCIe 4.0 3D NAND NVMe M.2 SSD"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Crucial P3 Plus 500GB PCIe 4.0 3D NAND NVMe M.2 SSD",
+        "price": 3199.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=5499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_tv_resolution_mismatch_4k_vs_fhd():
+    """4K TV must NEVER match Full HD TV."""
+    amz_title = "Sony Bravia 108 cm (43 inches) 4K Ultra HD Smart LED Google TV KD-43X74L"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Sony Bravia 108 cm (43 inches) Full HD Smart LED Google TV KD-43W830K",
+        "price": 28990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=39990.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_monitor_refresh_rate_mismatch_180hz_vs_75hz():
+    """180Hz gaming monitor must NEVER match 75Hz monitor."""
+    amz_title = "Acer Nitro VG240Y 23.8 Inch IPS Full HD 180Hz 0.5ms Gaming Monitor"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer EK240Y 23.8 inch Full HD IPS 75Hz Monitor",
+        "price": 5999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=8999.0, candidate=candidate) == 0.0
+
+
+def test_adaptive_parity_band_high_ticket():
+    """On a Rs 1,60,000 laptop, Rs 5,000 savings is a True Deal (capped at Rs 1,500 band)."""
+    # Flipkart: 160000, Amazon: 155000 (diff = 5000, > 1500 band)
+    verdict = classify_cross_market_verdict(amazon_price=155000, flipkart_price=160000)
+    assert verdict["verdict"] == "true_deal"
+    assert verdict["is_deal"] is True
+    assert verdict["parity_band"] == 1500.0
+
+
+def test_adaptive_parity_band_low_ticket():
+    """On a Rs 200 item, Rs 30 price difference is within Rs 50 minimum tolerance."""
+    verdict = classify_cross_market_verdict(amazon_price=230, flipkart_price=200)
+    assert verdict["verdict"] == "market_parity"
+    assert verdict["parity_band"] == 50.0
+
+
+def test_score_flipkart_match_rejects_renewed_vs_new():
+    """Renewed/refurbished Amazon item must never match a brand-new Flipkart item."""
+    amz_title = "(Renewed) Apple iPhone 13 (128GB) - Starlight"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Apple iPhone 13 (Starlight, 128 GB)",
+        "price": 52990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=36990.0, candidate=candidate) == 0.0

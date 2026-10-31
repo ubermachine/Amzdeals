@@ -43,3 +43,13 @@ def test_static_files_served(client):
     # but the server itself should not 500 or crash.
     response = client.get("/")
     assert response.status_code in (200, 404)
+
+
+def test_api_version_endpoint(client):
+    """Verify /api/version returns release metadata."""
+    response = client.get("/api/version")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"] == "2.3.0"
+    assert data["release"] == "v2.3.0"
+    assert data["status"] == "healthy"

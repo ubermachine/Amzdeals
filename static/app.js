@@ -359,6 +359,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ─── Shared Product Renderer ───
+        function getOptimizedImageUrl(rawUrl) {
+        if (!rawUrl) return 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%231a1a24"/><text x="50%" y="50%" fill="%23666" font-family="sans-serif" font-size="14" text-anchor="middle" dominant-baseline="middle">No Image</text></svg>';
+        return rawUrl.replace(/\._[A-Z0-9_]+_\./, '._AC_UL320_.');
+    }
+
     function renderProducts(products, targetGrid, showDealScore, sortBy = null) {
         if (!products || products.length === 0) {
             const errorEl = targetGrid === productGrid ? errorMessage : topDealsError;
@@ -373,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'product-card';
 
-            const imgUrl = product.image_url || 'https://via.placeholder.com/200x200?text=No+Image';
+            const imgUrl = getOptimizedImageUrl(product.image_url);
 
             const formatPrice = (price) => {
                 if (price === null || price === undefined) return 'N/A';
@@ -407,6 +412,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 verifiedBadge = `<div class="verified-badge">✓ Verified Deal</div>`;
                 trueDealTag = `<span class="verified-tag">✓ Verified Deal</span>`;
                 card.classList.add('true-deal');
+            }
+
+            // Prime badge
+            let primeBadge = '';
+            if (product.is_prime) {
+                primeBadge = `<span class="prime-tag">✓ Prime</span>`;
+            }
+
+            // Refurbished tag
+            let refurbishedBadge = '';
+            if (product.is_refurbished) {
+                refurbishedBadge = `<span class="refurbished-tag">♻️ Renewed</span>`;
+            }
+
+            // Hard cash savings tag
+            let cashSavingsBadge = '';
+            const effectiveP = product.effective_price || product.current_price;
+            const savings = (product.original_price && effectiveP) ? (product.original_price - effectiveP) : 0;
+            if (savings >= 1000) {
+                cashSavingsBadge = `<span class="cash-savings-tag">💰 Save ₹${Math.round(savings).toLocaleString('en-IN')}</span>`;
+            }
+
+            // Coupon badge
+            let couponBadge = '';
+            if (product.coupon_discount && product.coupon_discount > 0) {
+                const effText = product.effective_price ? ` (Effective: ₹${Math.round(product.effective_price).toLocaleString('en-IN')})` : '';
+                couponBadge = `<div class="coupon-badge" title="${escapeHtml(product.coupon || '')}">🎟️ Save ₹${Math.round(product.coupon_discount).toLocaleString('en-IN')} with coupon${effText}</div>`;
+            } else if (product.coupon) {
+                couponBadge = `<div class="coupon-badge">${escapeHtml(product.coupon)}</div>`;
             }
 
             // Cross-market Flipkart badge
@@ -463,11 +497,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${rankBadge}
                 ${showDealScore ? dealScoreBadge : verifiedBadge}
                 <div class="image-container">
-                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
+                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy" decoding="async">
                 </div>
                 <div class="product-info">
                     <div class="product-badges-row">
                         ${amazonBadge}
+                        ${primeBadge}
+                        ${cashSavingsBadge}
+                        ${refurbishedBadge}
                         ${trueDealTag}
                     </div>
                     <h3 class="product-title" title="${escapeHtml(product.title)}">${escapeHtml(product.title)}</h3>
@@ -478,6 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="current-price">${currentPriceText}</span>
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
+                    ${couponBadge}
                     ${flipkartBadge}
                     <a href="${escapeHtml(product.product_url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
                     ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}

@@ -88,7 +88,9 @@ async def test_search_deals_fetches_on_cache_miss(test_db_path):
     mock_response.text = fake_html
     mock_response.raise_for_status = MagicMock()
 
-    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session:
+    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session, \
+         patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = {"match_found": False, "verdict": "unverified", "is_deal": False}
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=mock_response)
         mock_get_session.return_value = mock_session
@@ -118,7 +120,9 @@ async def test_search_deals_never_caches_empty_products(test_db_path):
     mock_response.text = "<html><body>No products here</body></html>"
     mock_response.raise_for_status = MagicMock()
 
-    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session:
+    with patch("scraper.engine._get_session", new_callable=AsyncMock) as mock_get_session, \
+         patch("scraper.engine.verify_product_against_flipkart", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = {"match_found": False, "verdict": "unverified", "is_deal": False}
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=mock_response)
         mock_get_session.return_value = mock_session

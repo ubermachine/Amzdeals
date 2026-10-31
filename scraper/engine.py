@@ -11,6 +11,7 @@ Safety features:
 
 import asyncio
 import logging
+import math
 import random
 import statistics
 from urllib.parse import urlencode
@@ -34,6 +35,28 @@ _scrape_semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_SCRAPES)
 _session: requests.AsyncSession | None = None
 _session_lock = asyncio.Lock()
 
+
+_fk_session: requests.AsyncSession | None = None
+_fk_session_lock = asyncio.Lock()
+
+
+async def _get_flipkart_session() -> requests.AsyncSession:
+    """Dedicated curl_cffi session for Flipkart with HTTP/2 multiplexing & connection pooling."""
+    global _fk_session
+    if _fk_session is None:
+        async with _fk_session_lock:
+            if _fk_session is None:
+                from curl_cffi.curl import CurlOpt
+                _fk_session = requests.AsyncSession(
+                    impersonate="chrome",
+                    timeout=5.0,
+                    curl_options={
+                        CurlOpt.PIPEWAIT: 1,
+                        CurlOpt.DNS_CACHE_TIMEOUT: 3600,
+                        CurlOpt.TCP_NODELAY: 1,
+                    },
+                )
+    return _fk_session
 
 async def _get_session() -> requests.AsyncSession:
     """Get or create the shared curl_cffi AsyncSession (Chrome impersonation)."""
@@ -164,39 +187,95 @@ def build_category_url(
 
 
 def compute_deal_score(product: dict) -> int:
-    """Compute a 0–100 deal quality score for a product.
+    """Compute Multi-Dimensional Deal Quality Score (MDQS v3.0) for a product (0–100).
 
-    Weighted formula:
-        - 60% discount percentage (0–100)
-        - 25% rating normalized to 0–100 scale (with Bayesian smoothing toward m=3.8, C=10)
-        - 15% review count normalized to 0–100 (capped at 5000)
+    Weighted Utility:
+        - 35% Relative discount percentage utility U_relative (0–100)
+        - 35% Absolute cash savings utility U_cash(delta_INR) (log-concave up to Rs. 50,000)
+        - 18% Shifted Bayesian rating utility U_rating over [3.0, 5.0]
+        - 12% CLT logarithmic review scaling U_reviews (log10 up to 10,000)
 
-    Products with no discount are scored 0.
+    Trust & Catalog Adjustments:
+        - Prime boost: +6
+        - Best Seller / Amazon's Choice boost: +4
+        - Unreviewed non-Prime dropshipper penalty: -15 (if not is_prime and reviews < 20)
+        - Refurbished / Renewed penalty: -20
+
+    Products with no discount or non-positive price are scored 0.
 
     Args:
-        product: Dict with keys discount_pct, rating, review_count.
+        product: Dict with product attributes.
 
     Returns:
         Integer score from 0 to 100.
     """
-    discount = product.get("discount_pct")
-    if discount is None:
+    discount = (
+        product.get("effective_discount_pct")
+        if product.get("effective_discount_pct") is not None
+        else product.get("discount_pct")
+    )
+    if discount is None or discount <= 0:
         return 0
 
+    u_relative = max(0.0, min(100.0, float(discount)))
+
+    # 1. Absolute Cash Savings Utility (log-concave up to 50,000 INR)
+    cur_price = (
+        product.get("effective_price")
+        if product.get("effective_price") is not None
+        else product.get("current_price")
+    )
+    if cur_price is None:
+        cur_price = product.get("price")
+    orig_price = product.get("original_price")
+
+    if orig_price and cur_price and orig_price > cur_price:
+        delta_inr = orig_price - cur_price
+    elif cur_price and 0 < discount < 100:
+        delta_inr = cur_price * (discount / (100.0 - discount))
+    else:
+        delta_inr = 0.0
+
+    if delta_inr > 0:
+        # log10(1 + 50000) ~= 4.69897
+        u_cash = min(100.0, (math.log10(1.0 + delta_inr) / 4.69897) * 100.0)
+    else:
+        u_cash = u_relative
+
+    # 2. Shifted Bayesian Rating Utility over [3.0, 5.0]
     rating = product.get("rating")
     reviews = product.get("review_count") or 0
 
     if rating is not None and rating > 0:
-        # Bayesian shrinkage: pulls low-review items toward prior mean 3.8
         smoothed_rating = (rating * reviews + 3.8 * 10) / (reviews + 10)
-        norm_rating = (smoothed_rating / 5.0) * 100
+        u_rating = max(0.0, min(100.0, ((smoothed_rating - 3.0) / 2.0) * 100.0))
     else:
-        norm_rating = 0.0
+        u_rating = 0.0
 
-    norm_reviews = (min(reviews, 5000) / 5000) * 100
+    # 3. CLT Logarithmic Review Scaling
+    # log10(1 + 10000) ~= 4.00004
+    u_reviews = min(100.0, (math.log10(1.0 + min(reviews, 10000)) / 4.00004) * 100.0)
 
-    score = discount * 0.6 + norm_rating * 0.25 + norm_reviews * 0.15
-    return round(score)
+    base_score = (
+        u_relative * 0.35 +
+        u_cash * 0.35 +
+        u_rating * 0.18 +
+        u_reviews * 0.12
+    )
+
+    # 4. Trust & Catalog Integrity Adjustments
+    delta_trust = 0
+    if product.get("is_prime"):
+        delta_trust += 6
+    if product.get("badge") in ("Best Seller", "Amazon's Choice"):
+        delta_trust += 4
+    if not product.get("is_prime") and reviews < 20:
+        delta_trust -= 15
+    if product.get("is_refurbished"):
+        delta_trust -= 20
+
+    final_score = round(base_score + delta_trust)
+    return max(0, min(100, final_score))
 
 
 # ─── Category deals (multi-page) ─────────────────────────────────────
@@ -236,12 +315,16 @@ async def search_category_deals(
     cached = await cache.get(cache_key)
     if cached is not None:
         cached["cached"] = True
+        if len(cached.get("products", [])) > config.TOP_DEALS_LIMIT:
+            cached["products"] = cached["products"][: config.TOP_DEALS_LIMIT]
+            cached["total_results"] = len(cached["products"])
         return cached
 
     # Look up category metadata for price floors and true deal calibration
     cat_meta = getattr(config, "CATEGORY_METADATA", {}).get(node, {})
     min_price = cat_meta.get("min_price", 0)
     min_true_deal_pct = cat_meta.get("min_true_deal_pct", 35)
+    is_device_node = node in getattr(config, "DEVICE_NODES_FOR_ACCESSORY_FILTER", set())
 
     # Fetch multiple pages
     all_products = []
@@ -274,6 +357,8 @@ async def search_category_deals(
             price = p.get("current_price") if p.get("current_price") is not None else p.get("price")
             if price is not None and price < min_price:
                 continue
+            if is_device_node and p.get("is_accessory"):
+                continue
             asin = p.get("asin")
             if asin and asin not in seen_asins:
                 seen_asins.add(asin)
@@ -294,12 +379,17 @@ async def search_category_deals(
         }
 
     # Recompute is_true_deal statistically across the entire category sample
-    valid_discounts = [p["discount_pct"] for p in all_products if p.get("discount_pct") is not None]
+    valid_discounts = [
+        p.get("effective_discount_pct") or p.get("discount_pct")
+        for p in all_products
+        if (p.get("effective_discount_pct") or p.get("discount_pct")) is not None
+    ]
     category_median_discount = statistics.median(valid_discounts) if valid_discounts else 0
 
     for p in all_products:
-        d = p.get("discount_pct")
-        if d is not None and d >= min_true_deal_pct and d >= category_median_discount + 8:
+        d = p.get("effective_discount_pct") if p.get("effective_discount_pct") is not None else p.get("discount_pct")
+        min_threshold = max(50, min_true_deal_pct) if p.get("is_refurbished") else min_true_deal_pct
+        if d is not None and d >= min_threshold and d >= category_median_discount + 8:
             p["is_true_deal"] = True
         else:
             p["is_true_deal"] = False
@@ -309,14 +399,14 @@ async def search_category_deals(
     # Prioritize candidate deals (is_true_deal) PLUS top category products to ensure
     # users see Flipkart price parity / deal verdicts across top cards.
     candidate_deals = [p for p in all_products if p.get("is_true_deal")]
-    target_prods = list(candidate_deals[:12])
-    for p in all_products[:8]:
-        if p not in target_prods:
+    target_prods = list(candidate_deals[:6])
+    for p in all_products[:3]:
+        if p not in target_prods and len(target_prods) < 8:
             target_prods.append(p)
 
     if target_prods:
-        session = await _get_session()
-        fk_semaphore = asyncio.Semaphore(2)
+        session = await _get_flipkart_session()
+        fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one(prod):
             async with fk_semaphore:
@@ -324,23 +414,26 @@ async def search_category_deals(
                     fk_res = await verify_product_against_flipkart(prod, session, cache)
                     prod["cross_market"] = fk_res
                     verdict = fk_res.get("verdict")
+                    fk_savings = fk_res.get("flipkart_savings", 0.0)
+                    diff_pct = fk_res.get("diff_pct", 0.0)
+
                     if verdict == "market_parity":
-                        # Within +-5% is Market Parity -> NOT a deal!
                         prod["is_true_deal"] = False
                         prod["deal_score"] = max(0, prod["deal_score"] - 15)
                     elif verdict == "cheaper_on_flipkart":
-                        # Flipkart is cheaper -> Fake Deal!
                         prod["is_true_deal"] = False
-                        prod["deal_score"] = max(0, prod["deal_score"] - 25)
+                        if diff_pct >= 20.0 or fk_savings >= 2000.0:
+                            prod["deal_score"] = min(12, max(0, round(prod["deal_score"] * 0.15)))
+                        else:
+                            prod["deal_score"] = max(0, prod["deal_score"] - 25)
                     elif verdict == "true_deal":
-                        # Amazon is >= 5% cheaper than Flipkart -> Confirmed True Deal!
                         prod["is_true_deal"] = True
                         prod["deal_score"] = min(100, prod["deal_score"] + 10)
                 except Exception as e:
                     logger.warning("Error verifying product %s on Flipkart: %s", prod.get("asin"), e)
 
         # Batch verify target products (limit to 20 to keep latency tight)
-        await asyncio.gather(*[_verify_one(p) for p in target_prods[:20]])
+        await asyncio.gather(*[_verify_one(p) for p in target_prods])
 
     if sort_by == "deal_score":
         all_products.sort(key=lambda p: p["deal_score"], reverse=True)
@@ -383,6 +476,7 @@ async def _fetch_with_retry(url: str) -> str | None:
     Returns:
         HTML string on success, None on failure after all retries.
     """
+    global _session
     async with _scrape_semaphore:
         session = await _get_session()
 
@@ -410,7 +504,6 @@ async def _fetch_with_retry(url: str) -> str | None:
                         config.MAX_RETRIES,
                     )
                     # Reset session so retry gets a fresh connection & cookie state
-                    global _session
                     if _session is not None:
                         try:
                             await _session.close()
@@ -433,9 +526,17 @@ async def _fetch_with_retry(url: str) -> str | None:
                     config.MAX_RETRIES,
                     str(e),
                 )
+                # Reset dead/stalled connection session so retry gets a fresh TLS state
+                if _session is not None:
+                    try:
+                        await _session.close()
+                    except Exception:
+                        pass
+                    _session = None
                 if attempt < config.MAX_RETRIES - 1:
                     wait = config.BACKOFF_BASE ** (attempt + 1)
                     await asyncio.sleep(wait)
+                    session = await _get_session()
                 else:
                     return None
 
@@ -472,6 +573,9 @@ async def search_deals(
     cached = await cache.get(cache_key)
     if cached is not None:
         cached["cached"] = True
+        if len(cached.get("products", [])) > config.TOP_DEALS_LIMIT:
+            cached["products"] = cached["products"][: config.TOP_DEALS_LIMIT]
+            cached["total_results"] = len(cached["products"])
         return cached
 
     # Throttle: random delay before hitting Amazon
@@ -500,8 +604,8 @@ async def search_deals(
 
     # Cross-Market Flipkart Verification on top search results
     if products:
-        session = await _get_session()
-        fk_semaphore = asyncio.Semaphore(2)
+        session = await _get_flipkart_session()
+        fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one_search(prod):
             async with fk_semaphore:
@@ -509,10 +613,16 @@ async def search_deals(
                     fk_res = await verify_product_against_flipkart(prod, session, cache)
                     prod["cross_market"] = fk_res
                     verdict = fk_res.get("verdict")
+                    fk_savings = fk_res.get("flipkart_savings", 0.0)
+                    diff_pct = fk_res.get("diff_pct", 0.0)
+
                     if verdict == "market_parity":
                         prod["deal_score"] = max(0, prod["deal_score"] - 15)
                     elif verdict == "cheaper_on_flipkart":
-                        prod["deal_score"] = max(0, prod["deal_score"] - 25)
+                        if diff_pct >= 20.0 or fk_savings >= 2000.0:
+                            prod["deal_score"] = min(12, max(0, round(prod["deal_score"] * 0.15)))
+                        else:
+                            prod["deal_score"] = max(0, prod["deal_score"] - 25)
                     elif verdict == "true_deal":
                         prod["deal_score"] = min(100, prod["deal_score"] + 10)
                 except Exception as e:

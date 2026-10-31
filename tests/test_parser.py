@@ -1,4 +1,4 @@
-﻿from scraper.parser import parse_search_results
+from scraper.parser import parse_search_results
 
 SAMPLE_RESULT_HTML = """
 <div class="s-main-slot s-result-list">
@@ -147,3 +147,52 @@ def test_parse_rating_variants():
     assert _parse_rating("3 star") == 3.0
     assert _parse_rating(None) is None
     assert _parse_rating("invalid") is None
+
+
+from scraper.parser import (
+    parse_coupon_discount,
+    is_refurbished_title,
+    is_accessory_title,
+    extract_pack_count,
+)
+
+
+def test_coupon_discount_parsing():
+    assert parse_coupon_discount("Save ₹500 with coupon", 5000) == 500.0
+    assert parse_coupon_discount("Apply ₹1,500 coupon", 30000) == 1500.0
+    assert parse_coupon_discount("Extra 10% off with coupon", 2000) == 200.0
+    assert parse_coupon_discount(None, 1000) == 0.0
+    assert parse_coupon_discount("No discount here", 1000) == 0.0
+
+
+def test_refurbished_and_accessory_detection():
+    assert is_refurbished_title("(Renewed) Dell Latitude 7490 Core i7") is True
+    assert is_refurbished_title("Apple iPhone 13 (Refurbished 128GB)") is True
+    assert is_refurbished_title("Brand New Samsung Galaxy S24 Ultra") is False
+
+    assert is_accessory_title("Spigen Ultra Hybrid Back Cover for iPhone 15") is True
+    assert is_accessory_title("Tempered Glass Screen Protector for OnePlus 12") is True
+    assert is_accessory_title("Apple iPhone 15 Pro Max 256GB") is False
+
+
+def test_pack_count_extraction():
+    assert extract_pack_count("Wild Stone Edge Deodorant (Pack of 3)") == 3
+    assert extract_pack_count("Cotton T-Shirts, Set of 5") == 5
+    assert extract_pack_count("3-Pack Crew Socks") == 3
+    assert extract_pack_count("Logitech Wireless Mouse") == 1
+
+
+def test_parse_coupon_discount_you_pay():
+    """Verify 'You pay ₹X' teaser text calculates the net discount correctly."""
+    assert parse_coupon_discount("You pay ₹1,200", current_price=1500) == 300.0
+    assert parse_coupon_discount("Prime Savings: You pay ₹1,221.23", current_price=1258.0) == 36.77
+    # If you_pay >= current_price or invalid, return 0.0
+    assert parse_coupon_discount("You pay ₹1,500", current_price=1500) == 0.0
+
+
+def test_is_accessory_title_watch_box():
+    """Verify watch boxes, rolls, and cases are flagged as accessories."""
+    assert is_accessory_title("LEDO 6 Slot Luxury Leather Watch Box Organizer") is True
+    assert is_accessory_title("Birch & Co Velvet Watch Roll Case") is True
+    assert is_accessory_title("Titan Crest 1.43 AMOLED Smartwatch") is False
+    assert is_accessory_title("Daniel Hechter Paris Bercy Chronograph Watch") is False

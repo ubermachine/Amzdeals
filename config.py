@@ -1,5 +1,6 @@
 """Central configuration for DealFinderAmazonPy."""
 
+APP_VERSION = "2.3.0"
 # Amazon
 AMAZON_BASE_URL = "https://www.amazon.in/s"
 AMAZON_PRODUCT_URL = "https://www.amazon.in/dp/{asin}"
@@ -9,7 +10,7 @@ CACHE_TTL_SECONDS = 1800  # 30 minutes
 CACHE_DB_PATH = "cache.db"
 
 # Request
-REQUEST_TIMEOUT = 15  # seconds
+REQUEST_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
 BACKOFF_BASE = 2  # exponential backoff: 2s, 4s, 8s
 
@@ -67,9 +68,31 @@ CATEGORY_METADATA = {
     "1953111031": {"min_price": 299,   "min_true_deal_pct": 35},  # Baby Care & Toys
 }
 
+# Catalog Hardening & Anti-Scam Rules
+REFURBISHED_KEYWORDS = [
+    "renewed", "refurbished", "pre-owned", "certified renewed", "unboxed"
+]
+
+DEVICE_NODES_FOR_ACCESSORY_FILTER = {
+    "1375424031",  # Laptops
+    "1805560031",  # Smartphones
+    "1375425031",  # Monitors
+    "1375458031",  # Tablets & iPads
+    "1389375031",  # TVs & Projectors
+    "1350387031",  # Watches
+    "11599648031", # Smartwatches
+}
+
+ACCESSORY_KEYWORDS = [
+    "case for", "cover for", "tempered glass", "screen protector",
+    "laptop sleeve", "keyboard skin", "back cover", "silicone cover",
+    "charging cable", "cable protector", "wall mount", "protective case",
+    "stylus pen", "pouch for", "skin wrap", "watch box", "watch organizer", "watch roll", "case for watch"
+]
+
 # Top Deals
-TOP_DEALS_PAGES = 5       # pages to scrape per category
-TOP_DEALS_LIMIT = 100     # max products per category
+TOP_DEALS_PAGES = 2       # pages to scrape per category (2 dense pages)
+TOP_DEALS_LIMIT = 40      # optimal responsive limit (4x10, 3x13, 2x20)
 
 # Safety
 MAX_CONCURRENT_SCRAPES = 1  # max concurrent HTTP requests to Amazon
