@@ -79,8 +79,23 @@ def parse_coupon_discount(coupon_text: str | None, current_price: float | None) 
         'Save ₹500 with coupon' -> 500.0
         'Apply ₹1,500 coupon' -> 1500.0
         'Extra 5% off with coupon' (with current_price 2000) -> 100.0
+        'You pay ₹1,200' (with current_price 1500) -> 300.0
     """
     if not coupon_text:
+        return 0.0
+
+    lower = coupon_text.lower()
+
+    # If it says "you pay ₹X", the discount is current_price - X (if current_price > X)
+    if "you pay" in lower:
+        rupee_match = re.search(r"(?:₹|rs\.?)\s*([\d,]+(?:\.\d+)?)", coupon_text, re.IGNORECASE)
+        if rupee_match and current_price:
+            try:
+                you_pay = float(rupee_match.group(1).replace(",", ""))
+                if 0 < you_pay < current_price:
+                    return round(current_price - you_pay, 2)
+            except (ValueError, TypeError):
+                pass
         return 0.0
 
     # Search for absolute rupee amount: ₹500, ₹1,500, Rs. 500, etc.
@@ -120,7 +135,7 @@ def is_accessory_title(title: str | None) -> bool:
         "case for", "cover for", "tempered glass", "screen protector",
         "laptop sleeve", "keyboard skin", "silicone case", "back cover",
         "charging cable", "cable protector", "wall mount", "protective case",
-        "stylus pen", "pouch for", "camera lens protector"
+        "stylus pen", "pouch for", "camera lens protector", "watch box", "watch organizer", "watch roll", "case for watch"
     ]
     return any(trig in lower for trig in accessory_triggers)
 

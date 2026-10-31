@@ -79,13 +79,15 @@ DEVICE_NODES_FOR_ACCESSORY_FILTER = {
     "1375425031",  # Monitors
     "1375458031",  # Tablets & iPads
     "1389375031",  # TVs & Projectors
+    "1350387031",  # Watches
+    "11599648031", # Smartwatches
 }
 
 ACCESSORY_KEYWORDS = [
     "case for", "cover for", "tempered glass", "screen protector",
     "laptop sleeve", "keyboard skin", "back cover", "silicone cover",
     "charging cable", "cable protector", "wall mount", "protective case",
-    "stylus pen", "pouch for", "skin wrap"
+    "stylus pen", "pouch for", "skin wrap", "watch box", "watch organizer", "watch roll", "case for watch"
 ]
 
 # Top Deals
