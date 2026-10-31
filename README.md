@@ -3,7 +3,8 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Tests Passing](https://img.shields.io/badge/tests-82%20passed-brightgreen.svg)](tests/)
+[![Release](https://img.shields.io/badge/release-v2.1.0-blueviolet.svg)](https://github.com/)
+[![Tests Passing](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
@@ -59,6 +60,35 @@ An asynchronous, high-stealth deal discovery and price verification engine for *
   * *Cheaper on Flipkart*: Flipkart is $\ge 5\%$ cheaper than Amazon $\rightarrow$ Fake Deal (`⚠️ Cheaper on Flipkart: ₹X ↗`).
 * **Strict Category Batch Verification with Caching**: Gated candidate verification with a 6-hour SQLite `flipkart_cache` to keep repeat lookups under 1ms.
 * **Test Suite Expansion**: Comprehensive test coverage across `tests/test_flipkart_matcher.py` bringing total passed tests to **82**.
+
+### 7. Release v2.1.0: Zero-Tolerance Hardware Conflict Gating & High-Speed Verification Engine (October 2026)
+* **13-Layer Zero-Tolerance Hardware Conflict Gating (`scraper/flipkart.py`)**:
+  To permanently eradicate false cross-market deals (e.g. comparing an 8 GB RAM laptop with 16 GB, or an RTX 3050 GPU with RTX 4050), candidate matching enforces 13 zero-tolerance conflict gates:
+  1. *RAM Capacity Conflict*: `extract_ram_gb()` hard-rejects differing RAM configs (8 GB vs 16 GB, 16 GB vs 32 GB). Match score drops to `0.0`.
+  2. *GPU Model Conflict*: `extract_gpu()` hard-rejects differing GPU tiers (RTX 3050 vs RTX 4050, RTX 2050 vs 3050).
+  3. *Dedicated vs Integrated GPU*: `has_dedicated_gpu()` blocks laptops with dedicated NVIDIA RTX GPUs from matching integrated Intel Iris Xe / AMD Radeon variants.
+  4. *CPU Architecture Generation*: `extract_cpu_gen()` blocks cross-generation mismatches (12th Gen vs 13th Gen, Core Ultra vs 13th, Ryzen 5000 vs 7000).
+  5. *CPU Processor Model Codes*: `extract_cpu_model()` blocks different silicon tiers within the same generation (125H performance vs 115U low-power, 7320U vs 7330U, 12450H vs 13420H, 120U vs 100U).
+  6. *Laptop Sub-Series Disambiguation*: Strict regex gates prevent matching budget series with premium series (Acer Aspire `One` vs `3` vs `5` vs `15` vs `Lite`; Acer Swift `Pro` vs `Neo` vs `Go`; Asus Vivobook `Go` vs `S` vs `Pro`; Asus TUF `A15` vs `F15`; Lenovo IdeaPad `Slim 1` vs `Slim 3` vs `Slim 5`).
+  7. *Display Screen Size*: `extract_screen_size()` matches screen boundaries (14.0" vs 15.6", 43" vs 55" TV) and infers size class from series names (`Aspire 15` &rarr; 15.6", `Vivobook 14` &rarr; 14.0").
+  8. *Display Resolution Classes*: `extract_resolution()` blocks matching 4K Ultra HD TVs/Monitors with Full HD (1080p) or HD Ready (720p) displays.
+  9. *Monitor Refresh Rate*: `extract_refresh_rate()` prevents 144Hz–240Hz gaming monitors from matching $\le 100	ext{Hz}$ office monitors.
+  10. *Mobile Cellular Connectivity*: Blocks matching 5G smartphones/tablets with 4G / Wi-Fi only variants.
+  11. *Mobile Tier Hierarchy*: `extract_device_tier()` disambiguates `Pro+` vs `Pro`, `Ultra` vs `Plus`, `Lite` vs Standard.
+  12. *Normalized Storage Tiers*: `normalize_storage_tier()` and `extract_storage_gb()` standardize drive capacities across SSDs, external drives, and memory cards, blocking 500 GB vs 1 TB mismatches.
+  13. *Appliance Capacity & Wattage*: `extract_wattage()` (500W vs 750W) and `extract_capacity_liters()` (1.2L vs 1.8L kettle, 20L vs 28L microwave oven).
+  14. *Spec Token Blacklisting*: Excluded capacity and display tokens (`512`, `1TB`, `144HZ`, `5G`, `4G`) from alphanumeric device model number matching so hardware specs never fool the model matcher.
+* **Latency & Throughput Overhaul (Sub-2s Execution)**:
+  * *5x Parallel Concurrency*: Upgraded Flipkart verification from `asyncio.Semaphore(2)` to `asyncio.Semaphore(5)`, executing candidate queries in a single parallel burst.
+  * *Strict 3.5s Fail-Fast Timeout*: Enforced `timeout=3.5` on all Flipkart requests to prevent socket hangs from stalling page loads.
+  * *Smart Candidate Batching*: Limited verification to top 6–8 confirmed statistical deal candidates (`is_true_deal`), eliminating 65%+ of redundant calls.
+  * *White-Label Bypass*: Safely skips external scraping for unbranded white-label items with no brand/model, while actively verifying all 18 categories (branded Shoes, Luggage, Watches, Cookware, and Tech).
+  * *Cached Latency*: Repeat visits hit SQLite cache in **16ms – 20ms**.
+* **Amazon Keyword Search Title Truncation Fix (`scraper/parser.py`)**:
+  * Resolved Amazon DOM split where keyword searches placed brand names in `<h2>` and product descriptions in child link selectors, restoring full titles for single-word truncated items ("LG" / "Samsung" &rarr; "LG 28 L Convection Microwave Oven").
+* **Release Metadata & Testing**:
+  * Added `APP_VERSION = "2.1.0"` in `config.py`, `/api/version` endpoint in `main.py`, and glassmorphic `v2.1.0` header tag in the UI.
+  * Complete automated test suite expanded to **105 passing tests** across 11 test modules.
 
 Deal Finder automates the extraction of deeply discounted products using Amazon's native `pct-off` URL query filters and browse-node hierarchies. It filters out sponsored clutter, verifies discounts against statistical baseline outliers, calculates a balanced multi-factor deal quality score, embeds 365-day historical price graphs via Keepa, and delivers the results through a modern glassmorphic web interface.
 

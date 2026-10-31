@@ -36,7 +36,18 @@ async def lifespan(app: FastAPI):
         await _cache.close()
 
 
-app = FastAPI(title="Amazon.in Deal Finder API", lifespan=lifespan)
+app = FastAPI(title="Amazon.in Deal Finder API", version=config.APP_VERSION, lifespan=lifespan)
+
+
+@app.get("/api/version")
+async def get_version():
+    """Return application release version metadata."""
+    return {
+        "version": config.APP_VERSION,
+        "release": f"v{config.APP_VERSION}",
+        "name": "Amazon Deal Finder",
+        "status": "healthy"
+    }
 
 
 async def fetch_keepa_graph(asin: str, range_days: int = 365) -> bytes | None:

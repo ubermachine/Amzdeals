@@ -1,5 +1,6 @@
 """Central configuration for DealFinderAmazonPy."""
 
+APP_VERSION = "2.1.0"
 # Amazon
 AMAZON_BASE_URL = "https://www.amazon.in/s"
 AMAZON_PRODUCT_URL = "https://www.amazon.in/dp/{asin}"
