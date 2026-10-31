@@ -46,6 +46,9 @@ SERIES_PATTERNS = [
     r"airdopes \d+(?: pro| plus| max)?", r"rockerz \d+(?: pro| plus)?",
     r"wh-ch\d+[a-z]*", r"wf-c\d+[a-z]*", r"wh-\d+[a-z]*",
     r"chromebook \d+", r"chromebook",
+    r"p3\s*plus", r"p3", r"p5\s*plus", r"p5", r"sn580", r"sn770", r"sn850x?", r"nv2", r"nv3",
+    r"980\s*pro", r"990\s*pro", r"970\s*evo", r"870\s*evo", r"t7\s*shield", r"t7", r"t9",
+    r"bravia\s*\d*", r"crystal\s*4k",
 ]
 
 # Fluff phrases to strip from Amazon titles
@@ -219,19 +222,67 @@ def extract_ram_gb(title: str) -> int | None:
     return None
 
 
+def normalize_storage_tier(gb: int | None) -> int | None:
+    """Normalize equivalent storage capacities to standard tier class."""
+    if gb is None:
+        return None
+    if gb in (120, 128):
+        return 128
+    if gb in (240, 250, 256):
+        return 256
+    if gb in (480, 500, 512):
+        return 512
+    if gb in (960, 1000, 1024):
+        return 1024
+    if gb in (2000, 2048):
+        return 2048
+    if gb in (4000, 4096):
+        return 4096
+    return gb
+
+
 def extract_storage_gb(title: str) -> int | None:
-    """Extract primary SSD/storage capacity in GB."""
+    """Extract primary SSD/storage/drive capacity in GB."""
     t = title.lower()
-    # 1TB or 2TB
-    m = re.search(r"\b(1|2)\s*tb\b", t)
+    # 1TB, 2TB, 4TB, 8TB
+    m = re.search(r"\b(1|2|4|8)\s*tb\b", t)
     if m:
         return int(m.group(1)) * 1024
-    # Slash notation storage: e.g. /512GB or / 512 GB SSD
-    m = re.search(r"\/\s*(128|256|512)\s*(?:gb)?", t)
+    # Slash notation storage: e.g. /512GB or / 512 GB SSD or / 1TB
+    m = re.search(r"\/\s*(120|128|240|250|256|480|500|512|960|1000|1024)\s*(?:gb)?", t)
     if m:
         return int(m.group(1))
-    # Explicit SSD / ROM / Storage
-    m = re.search(r"\b(128|256|512)\s*(?:gb)?\s*(?:ssd|hdd|emmc|rom|storage|nvme|ufs)\b", t)
+    # Explicit SSD / ROM / Storage / NVMe / M.2 / Drive / Card / Flash / Pen
+    m = re.search(r"\b(32|64|120|128|240|250|256|480|500|512|960|1000)\s*gb\b", t)
+    if m:
+        val = int(m.group(1))
+        if val in (32, 64):
+            if any(k in t for k in ("ssd", "drive", "card", "microsd", "storage", "rom", "nvme")):
+                m_ram = re.search(rf"\b{val}\s*gb\s*(?:ddr|lpddr|ram|memory)", t)
+                if not m_ram:
+                    return val
+        else:
+            return val
+    return None
+
+
+def extract_resolution(title: str) -> str | None:
+    """Extract display resolution class: 4k, qhd, fhd, hd."""
+    t = title.lower()
+    if re.search(r"\b(?:4k|ultra\s*hd|uhd|2160p|3840\s*[x*]\s*2160)\b", t):
+        return "4k"
+    if re.search(r"\b(?:qhd|wqhd|2k|1440p|2560\s*[x*]\s*1440)\b", t):
+        return "qhd"
+    if re.search(r"\b(?:full\s*hd|fhd|1080p|1920\s*[x*]\s*1080|wuxga)\b", t):
+        return "fhd"
+    if re.search(r"\b(?:hd\s*ready|720p|1366\s*[x*]\s*768|wxga)\b", t):
+        return "hd"
+    return None
+
+
+def extract_refresh_rate(title: str) -> int | None:
+    """Extract display refresh rate in Hz (e.g. 60Hz, 75Hz, 144Hz, 165Hz, 180Hz, 240Hz)."""
+    m = re.search(r"\b(60|75|90|100|120|144|165|180|240|360)\s*hz\b", title.lower())
     if m:
         return int(m.group(1))
     return None
@@ -551,8 +602,9 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
     # 7. Primary Storage Capacity Conflict (e.g. 512GB vs 1TB SSD)
     amz_storage = extract_storage_gb(amz_title)
     fk_storage = extract_storage_gb(fk_title)
-    if amz_storage and fk_storage and amz_storage != fk_storage:
-        return True
+    if amz_storage and fk_storage:
+        if normalize_storage_tier(amz_storage) != normalize_storage_tier(fk_storage):
+            return True
 
     # 8. Display Screen Size Conflict (e.g. 14" vs 15.6", 43" vs 55")
     amz_screen = extract_screen_size(amz_title)
@@ -647,6 +699,23 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
             base_overlap = any(am in fm or fm in am for am in amz_models for fm in fk_models)
             if not base_overlap:
                 return True
+
+    # 18. Display Resolution Conflict (e.g. 4K Ultra HD vs Full HD vs HD Ready)
+    amz_res = extract_resolution(amz_title)
+    fk_res = extract_resolution(fk_title)
+    if amz_res and fk_res and amz_res != fk_res:
+        is_display_device = bool(re.search(r"\b(?:tv|television|monitor|qled|oled|projector)\b", amz_lower + " " + fk_lower))
+        if is_display_device or (extract_screen_size(amz_title) or 0) >= 21.0 or (extract_screen_size(fk_title) or 0) >= 21.0:
+            return True
+
+    # 19. Monitor / Display Refresh Rate Conflict (Gaming 144Hz+ vs Standard <=100Hz)
+    amz_hz = extract_refresh_rate(amz_title)
+    fk_hz = extract_refresh_rate(fk_title)
+    if amz_hz and fk_hz:
+        amz_gaming_hz = amz_hz >= 144
+        fk_gaming_hz = fk_hz >= 144
+        if amz_gaming_hz != fk_gaming_hz:
+            return True
 
     return False
 
@@ -763,7 +832,7 @@ async def fetch_flipkart_candidates(query: str, session: requests.AsyncSession) 
     headers = get_stealth_headers()
 
     try:
-        resp = await session.get(url, headers=headers)
+        resp = await session.get(url, headers=headers, timeout=3.5)
         if resp.status_code == 200:
             return parse_flipkart_html(resp.text)
         else:
@@ -808,6 +877,11 @@ async def verify_product_against_flipkart(
 
     # 2. Extract signature & query Flipkart
     sig = extract_product_signature(title)
+    if not sig.get("brand") and not sig.get("series") and not sig.get("models"):
+        # Generic white-label item with no brand or model -> skip external network request
+        await cache.set_flipkart(cache_key, fallback_unverified)
+        return fallback_unverified
+
     candidates = await fetch_flipkart_candidates(sig["search_query"], session)
 
     if not candidates:

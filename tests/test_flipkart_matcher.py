@@ -438,3 +438,36 @@ def test_score_flipkart_match_rejects_appliance_capacity_mismatch():
         "price": 599.0,
     }
     assert score_flipkart_match(sig, amazon_price=799.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_storage_capacity_mismatch_1tb_vs_500gb():
+    """1TB SSD must NEVER match 500GB SSD."""
+    amz_title = "Crucial P3 Plus 1TB PCIe 4.0 3D NAND NVMe M.2 SSD"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Crucial P3 Plus 500GB PCIe 4.0 3D NAND NVMe M.2 SSD",
+        "price": 3199.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=5499.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_tv_resolution_mismatch_4k_vs_fhd():
+    """4K TV must NEVER match Full HD TV."""
+    amz_title = "Sony Bravia 108 cm (43 inches) 4K Ultra HD Smart LED Google TV KD-43X74L"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Sony Bravia 108 cm (43 inches) Full HD Smart LED Google TV KD-43W830K",
+        "price": 28990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=39990.0, candidate=candidate) == 0.0
+
+
+def test_score_flipkart_match_rejects_monitor_refresh_rate_mismatch_180hz_vs_75hz():
+    """180Hz gaming monitor must NEVER match 75Hz monitor."""
+    amz_title = "Acer Nitro VG240Y 23.8 Inch IPS Full HD 180Hz 0.5ms Gaming Monitor"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Acer EK240Y 23.8 inch Full HD IPS 75Hz Monitor",
+        "price": 5999.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=8999.0, candidate=candidate) == 0.0

@@ -309,14 +309,14 @@ async def search_category_deals(
     # Prioritize candidate deals (is_true_deal) PLUS top category products to ensure
     # users see Flipkart price parity / deal verdicts across top cards.
     candidate_deals = [p for p in all_products if p.get("is_true_deal")]
-    target_prods = list(candidate_deals[:12])
-    for p in all_products[:8]:
-        if p not in target_prods:
+    target_prods = list(candidate_deals[:6])
+    for p in all_products[:3]:
+        if p not in target_prods and len(target_prods) < 8:
             target_prods.append(p)
 
     if target_prods:
         session = await _get_session()
-        fk_semaphore = asyncio.Semaphore(2)
+        fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one(prod):
             async with fk_semaphore:
@@ -340,7 +340,7 @@ async def search_category_deals(
                     logger.warning("Error verifying product %s on Flipkart: %s", prod.get("asin"), e)
 
         # Batch verify target products (limit to 20 to keep latency tight)
-        await asyncio.gather(*[_verify_one(p) for p in target_prods[:20]])
+        await asyncio.gather(*[_verify_one(p) for p in target_prods])
 
     if sort_by == "deal_score":
         all_products.sort(key=lambda p: p["deal_score"], reverse=True)
@@ -509,7 +509,7 @@ async def search_deals(
     # Cross-Market Flipkart Verification on top search results
     if products:
         session = await _get_session()
-        fk_semaphore = asyncio.Semaphore(2)
+        fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one_search(prod):
             async with fk_semaphore:
