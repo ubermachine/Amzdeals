@@ -265,7 +265,7 @@ async def search_category_deals(
             continue
 
         any_success = True
-        products = parse_search_results(html)
+        products = parse_search_results(html, category_name)
         if not products and page_num > 1:
             # Reached end of available results on Amazon
             break
@@ -493,7 +493,7 @@ async def search_deals(
         }
 
     # Parse
-    products = parse_search_results(html)
+    products = parse_search_results(html, query)
 
     for p in products:
         p["deal_score"] = compute_deal_score(p)
