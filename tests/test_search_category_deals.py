@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+import config
 from cache.sqlite_cache import make_category_cache_key
 from scraper.engine import search_category_deals
 
@@ -297,7 +298,7 @@ async def test_search_category_deals_stops_early_when_limit_reached():
 
     # Should have called fetch only once because page 1 had >= 100 products
     assert mock_fetch.call_count == 1
-    assert len(result["products"]) == 100
+    assert len(result["products"]) == config.TOP_DEALS_LIMIT
 
 
 @pytest.mark.asyncio

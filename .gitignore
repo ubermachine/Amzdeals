@@ -164,3 +164,6 @@ cache.db
 
 
 *.db
+
+*.db-wal
+*.db-shm

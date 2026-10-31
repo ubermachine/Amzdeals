@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -37,6 +38,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Amazon.in Deal Finder API", version=config.APP_VERSION, lifespan=lifespan)
+
+# Enable GZip compression (>500 bytes) for ~75% wire size reduction
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.get("/api/version")

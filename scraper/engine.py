@@ -36,6 +36,28 @@ _session: requests.AsyncSession | None = None
 _session_lock = asyncio.Lock()
 
 
+_fk_session: requests.AsyncSession | None = None
+_fk_session_lock = asyncio.Lock()
+
+
+async def _get_flipkart_session() -> requests.AsyncSession:
+    """Dedicated curl_cffi session for Flipkart with HTTP/2 multiplexing & connection pooling."""
+    global _fk_session
+    if _fk_session is None:
+        async with _fk_session_lock:
+            if _fk_session is None:
+                from curl_cffi.curl import CurlOpt
+                _fk_session = requests.AsyncSession(
+                    impersonate="chrome",
+                    timeout=5.0,
+                    curl_options={
+                        CurlOpt.PIPEWAIT: 1,
+                        CurlOpt.DNS_CACHE_TIMEOUT: 3600,
+                        CurlOpt.TCP_NODELAY: 1,
+                    },
+                )
+    return _fk_session
+
 async def _get_session() -> requests.AsyncSession:
     """Get or create the shared curl_cffi AsyncSession (Chrome impersonation)."""
     global _session
@@ -380,7 +402,7 @@ async def search_category_deals(
             target_prods.append(p)
 
     if target_prods:
-        session = await _get_session()
+        session = await _get_flipkart_session()
         fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one(prod):
@@ -576,7 +598,7 @@ async def search_deals(
 
     # Cross-Market Flipkart Verification on top search results
     if products:
-        session = await _get_session()
+        session = await _get_flipkart_session()
         fk_semaphore = asyncio.Semaphore(5)
 
         async def _verify_one_search(prod):

@@ -1,6 +1,6 @@
 """Central configuration for DealFinderAmazonPy."""
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 # Amazon
 AMAZON_BASE_URL = "https://www.amazon.in/s"
 AMAZON_PRODUCT_URL = "https://www.amazon.in/dp/{asin}"
@@ -89,8 +89,8 @@ ACCESSORY_KEYWORDS = [
 ]
 
 # Top Deals
-TOP_DEALS_PAGES = 5       # pages to scrape per category
-TOP_DEALS_LIMIT = 100     # max products per category
+TOP_DEALS_PAGES = 2       # pages to scrape per category (2 dense pages)
+TOP_DEALS_LIMIT = 40      # optimal responsive limit (4x10, 3x13, 2x20)
 
 # Safety
 MAX_CONCURRENT_SCRAPES = 1  # max concurrent HTTP requests to Amazon

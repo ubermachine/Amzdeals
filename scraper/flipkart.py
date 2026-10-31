@@ -850,6 +850,8 @@ async def fetch_flipkart_candidates(query: str, session: requests.AsyncSession) 
     """Fetch search results from Flipkart using Chrome TLS impersonation."""
     url = f"https://www.flipkart.com/search?q={urllib.parse.quote(query)}"
     headers = get_stealth_headers()
+    headers["Referer"] = "https://www.flipkart.com/"
+    headers["Sec-Fetch-Site"] = "same-origin"
 
     try:
         resp = await session.get(url, headers=headers, timeout=3.5)

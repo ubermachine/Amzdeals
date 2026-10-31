@@ -359,6 +359,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ─── Shared Product Renderer ───
+        function getOptimizedImageUrl(rawUrl) {
+        if (!rawUrl) return 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%231a1a24"/><text x="50%" y="50%" fill="%23666" font-family="sans-serif" font-size="14" text-anchor="middle" dominant-baseline="middle">No Image</text></svg>';
+        return rawUrl.replace(/\._[A-Z0-9_]+_\./, '._AC_UL320_.');
+    }
+
     function renderProducts(products, targetGrid, showDealScore, sortBy = null) {
         if (!products || products.length === 0) {
             const errorEl = targetGrid === productGrid ? errorMessage : topDealsError;
@@ -373,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = document.createElement('div');
             card.className = 'product-card';
 
-            const imgUrl = product.image_url || 'https://via.placeholder.com/200x200?text=No+Image';
+            const imgUrl = getOptimizedImageUrl(product.image_url);
 
             const formatPrice = (price) => {
                 if (price === null || price === undefined) return 'N/A';
@@ -492,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${rankBadge}
                 ${showDealScore ? dealScoreBadge : verifiedBadge}
                 <div class="image-container">
-                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy">
+                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(product.title)}" class="product-image" loading="lazy" decoding="async">
                 </div>
                 <div class="product-info">
                     <div class="product-badges-row">
