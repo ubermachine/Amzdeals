@@ -1,6 +1,6 @@
 """Central configuration for DealFinderAmazonPy."""
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 # Amazon
 AMAZON_BASE_URL = "https://www.amazon.in/s"
 AMAZON_PRODUCT_URL = "https://www.amazon.in/dp/{asin}"
@@ -67,6 +67,26 @@ CATEGORY_METADATA = {
     "1953602031": {"min_price": 349,   "min_true_deal_pct": 50},  # Women's Clothing
     "1953111031": {"min_price": 299,   "min_true_deal_pct": 35},  # Baby Care & Toys
 }
+
+# Catalog Hardening & Anti-Scam Rules
+REFURBISHED_KEYWORDS = [
+    "renewed", "refurbished", "pre-owned", "certified renewed", "unboxed"
+]
+
+DEVICE_NODES_FOR_ACCESSORY_FILTER = {
+    "1375424031",  # Laptops
+    "1805560031",  # Smartphones
+    "1375425031",  # Monitors
+    "1375458031",  # Tablets & iPads
+    "1389375031",  # TVs & Projectors
+}
+
+ACCESSORY_KEYWORDS = [
+    "case for", "cover for", "tempered glass", "screen protector",
+    "laptop sleeve", "keyboard skin", "back cover", "silicone cover",
+    "charging cable", "cable protector", "wall mount", "protective case",
+    "stylus pen", "pouch for", "skin wrap"
+]
 
 # Top Deals
 TOP_DEALS_PAGES = 5       # pages to scrape per category

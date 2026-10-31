@@ -471,3 +471,30 @@ def test_score_flipkart_match_rejects_monitor_refresh_rate_mismatch_180hz_vs_75h
         "price": 5999.0,
     }
     assert score_flipkart_match(sig, amazon_price=8999.0, candidate=candidate) == 0.0
+
+
+def test_adaptive_parity_band_high_ticket():
+    """On a Rs 1,60,000 laptop, Rs 5,000 savings is a True Deal (capped at Rs 1,500 band)."""
+    # Flipkart: 160000, Amazon: 155000 (diff = 5000, > 1500 band)
+    verdict = classify_cross_market_verdict(amazon_price=155000, flipkart_price=160000)
+    assert verdict["verdict"] == "true_deal"
+    assert verdict["is_deal"] is True
+    assert verdict["parity_band"] == 1500.0
+
+
+def test_adaptive_parity_band_low_ticket():
+    """On a Rs 200 item, Rs 30 price difference is within Rs 50 minimum tolerance."""
+    verdict = classify_cross_market_verdict(amazon_price=230, flipkart_price=200)
+    assert verdict["verdict"] == "market_parity"
+    assert verdict["parity_band"] == 50.0
+
+
+def test_score_flipkart_match_rejects_renewed_vs_new():
+    """Renewed/refurbished Amazon item must never match a brand-new Flipkart item."""
+    amz_title = "(Renewed) Apple iPhone 13 (128GB) - Starlight"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Apple iPhone 13 (Starlight, 128 GB)",
+        "price": 52990.0,
+    }
+    assert score_flipkart_match(sig, amazon_price=36990.0, candidate=candidate) == 0.0

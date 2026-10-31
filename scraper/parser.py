@@ -72,6 +72,78 @@ def _parse_discount(text: str | None) -> int | None:
     return None
 
 
+def parse_coupon_discount(coupon_text: str | None, current_price: float | None) -> float:
+    """Parse numeric discount amount from Amazon coupon text.
+
+    Examples:
+        'Save ₹500 with coupon' -> 500.0
+        'Apply ₹1,500 coupon' -> 1500.0
+        'Extra 5% off with coupon' (with current_price 2000) -> 100.0
+    """
+    if not coupon_text:
+        return 0.0
+
+    # Search for absolute rupee amount: ₹500, ₹1,500, Rs. 500, etc.
+    rupee_match = re.search(r"(?:₹|rs\.?)\s*([\d,]+(?:\.\d+)?)", coupon_text, re.IGNORECASE)
+    if rupee_match:
+        try:
+            return float(rupee_match.group(1).replace(",", ""))
+        except (ValueError, TypeError):
+            pass
+
+    # Search for percentage: 5%, 10% off
+    pct_match = re.search(r"(\d+(?:\.\d+)?)\s*%", coupon_text)
+    if pct_match and current_price and current_price > 0:
+        try:
+            pct = float(pct_match.group(1))
+            return round((pct / 100.0) * current_price, 2)
+        except (ValueError, TypeError):
+            pass
+
+    return 0.0
+
+
+def is_refurbished_title(title: str | None) -> bool:
+    """Check if title indicates a refurbished, renewed, or pre-owned product."""
+    if not title:
+        return False
+    lower = title.lower()
+    return any(kw in lower for kw in ["(renewed)", "(refurbished)", "refurbished", "pre-owned", "certified renewed"])
+
+
+def is_accessory_title(title: str | None) -> bool:
+    """Check if title indicates a phone/laptop accessory (cases, tempered glass, cables)."""
+    if not title:
+        return False
+    lower = title.lower()
+    accessory_triggers = [
+        "case for", "cover for", "tempered glass", "screen protector",
+        "laptop sleeve", "keyboard skin", "silicone case", "back cover",
+        "charging cable", "cable protector", "wall mount", "protective case",
+        "stylus pen", "pouch for", "camera lens protector"
+    ]
+    return any(trig in lower for trig in accessory_triggers)
+
+
+def extract_pack_count(title: str | None) -> int:
+    """Extract pack or set count from title (e.g. 'Pack of 3', 'Set of 5')."""
+    if not title:
+        return 1
+    match = re.search(r"\b(?:pack|set|lot)\s+of\s+(\d+)\b", title, re.IGNORECASE)
+    if match:
+        try:
+            return max(1, int(match.group(1)))
+        except (ValueError, TypeError):
+            return 1
+    match2 = re.search(r"\b(\d+)\s*[-]?\s*(?:pack|pcs|pieces)\b", title, re.IGNORECASE)
+    if match2:
+        try:
+            return max(1, int(match2.group(1)))
+        except (ValueError, TypeError):
+            return 1
+    return 1
+
+
 def parse_search_results(html: str) -> list[dict]:
     """Parse Amazon.in search results HTML and return structured product data.
 
@@ -210,6 +282,19 @@ def parse_search_results(html: str) -> list[dict]:
             elif item.select_one('[aria-label*="Choice"]'):
                 badge = "Amazon's Choice"
 
+        coupon_discount = parse_coupon_discount(coupon, current_price)
+        effective_price = max(0.0, round(current_price - coupon_discount, 2)) if current_price is not None else None
+
+        # Recalculate effective discount if coupon provides additional savings
+        effective_discount_pct = discount_pct
+        if effective_price is not None and original_price and original_price > 0:
+            effective_discount_pct = round((1 - effective_price / original_price) * 100)
+            effective_discount_pct = max(0, min(99, effective_discount_pct))
+
+        is_refurbished = is_refurbished_title(title)
+        is_accessory = is_accessory_title(title)
+        pack_count = extract_pack_count(title)
+
         products.append(
             {
                 "asin": asin,
@@ -217,6 +302,12 @@ def parse_search_results(html: str) -> list[dict]:
                 "current_price": current_price,
                 "original_price": original_price,
                 "discount_pct": discount_pct,
+                "coupon_discount": coupon_discount,
+                "effective_price": effective_price,
+                "effective_discount_pct": effective_discount_pct,
+                "is_refurbished": is_refurbished,
+                "is_accessory": is_accessory,
+                "pack_count": pack_count,
                 "rating": rating,
                 "review_count": review_count,
                 "image_url": image_url,
@@ -228,11 +319,15 @@ def parse_search_results(html: str) -> list[dict]:
         )
 
     # Calculate median discount
-    valid_discounts = [p["discount_pct"] for p in products if p["discount_pct"] is not None]
+    valid_discounts = [
+        p.get("effective_discount_pct") or p.get("discount_pct")
+        for p in products
+        if (p.get("effective_discount_pct") or p.get("discount_pct")) is not None
+    ]
     median_discount = statistics.median(valid_discounts) if valid_discounts else 0
 
     for p in products:
-        d = p["discount_pct"]
+        d = p.get("effective_discount_pct") if p.get("effective_discount_pct") is not None else p.get("discount_pct")
         if d is not None and d >= 40 and d >= median_discount + 10:
             p["is_true_deal"] = True
         else:

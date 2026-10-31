@@ -717,6 +717,12 @@ def has_chipset_or_series_conflict(amz_title: str, fk_title: str) -> bool:
         if amz_gaming_hz != fk_gaming_hz:
             return True
 
+    # 20. Refurbished / Renewed Condition Conflict
+    amz_is_refurb = any(k in amz_lower for k in ["(renewed)", "(refurbished)", "refurbished", "pre-owned"])
+    fk_is_refurb = any(k in fk_lower for k in ["(renewed)", "(refurbished)", "refurbished", "pre-owned", "2nd hand"])
+    if amz_is_refurb != fk_is_refurb:
+        return True
+
     return False
 
 
@@ -790,9 +796,19 @@ def score_flipkart_match(amazon_sig: dict, amazon_price: float, candidate: dict)
     return min(max(0.0, score), 100.0)
 
 
+def adaptive_parity_band(price: float) -> float:
+    """Dynamic parity tolerance band: min Rs. 50, max Rs. 1500, or 5% of price."""
+    return max(50.0, min(0.05 * price, 1500.0))
+
+
 def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) -> dict:
-    """Classify pricing verdict between Amazon and Flipkart using +/-5% parity threshold."""
-    if not amazon_price or not flipkart_price:
+    """Classify pricing verdict using an adaptive parity band.
+
+    Adaptive band: tau(P) = max(50, min(0.05 * P, 1500))
+    - On low-ticket items, absorbs delivery noise (< Rs 50).
+    - On high-ticket items (> Rs 30,000), caps indifference threshold at Rs 1,500.
+    """
+    if not amazon_price or not flipkart_price or flipkart_price <= 0:
         return {
             "verdict": "unverified",
             "is_deal": False,
@@ -802,20 +818,23 @@ def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) ->
 
     diff = amazon_price - flipkart_price
     diff_pct = diff / flipkart_price
+    band = adaptive_parity_band(flipkart_price)
 
-    if abs(diff_pct) <= 0.05:
+    if abs(diff) <= band:
         return {
             "verdict": "market_parity",
             "is_deal": False,
             "price_diff": round(diff, 2),
             "diff_pct": round(diff_pct * 100, 1),
+            "parity_band": round(band, 2),
         }
-    elif diff_pct <= -0.05:
+    elif diff < -band:
         return {
             "verdict": "true_deal",
             "is_deal": True,
             "price_diff": round(abs(diff), 2),
             "diff_pct": round(abs(diff_pct) * 100, 1),
+            "parity_band": round(band, 2),
         }
     else:
         return {
@@ -823,6 +842,7 @@ def classify_cross_market_verdict(amazon_price: float, flipkart_price: float) ->
             "is_deal": False,
             "flipkart_savings": round(diff, 2),
             "diff_pct": round(diff_pct * 100, 1),
+            "parity_band": round(band, 2),
         }
 
 
@@ -851,7 +871,11 @@ async def verify_product_against_flipkart(
     """Verify an Amazon product against Flipkart using entity disambiguation & +/-5% parity."""
     asin = amazon_product.get("asin")
     title = amazon_product.get("title", "")
-    amazon_price = amazon_product.get("current_price") or amazon_product.get("price")
+    amazon_price = (
+        amazon_product.get("effective_price")
+        or amazon_product.get("current_price")
+        or amazon_product.get("price")
+    )
 
     fallback_unverified = {
         "match_found": False,

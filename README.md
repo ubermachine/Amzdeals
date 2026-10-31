@@ -3,8 +3,8 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![curl-cffi](https://img.shields.io/badge/TLS_Impersonation-curl__cffi-orange.svg)](https://github.com/yifeikong/curl_cffi)
-[![Release](https://img.shields.io/badge/release-v2.1.0-blueviolet.svg)](https://github.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)](tests/)
+[![Release](https://img.shields.io/badge/release-v2.2.0-blueviolet.svg)](https://github.com/)
+[![Tests Passing](https://img.shields.io/badge/tests-113%20passed-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An asynchronous, high-stealth deal discovery and price verification engine for **Amazon India (`amazon.in`)**.
@@ -60,6 +60,38 @@ An asynchronous, high-stealth deal discovery and price verification engine for *
   * *Cheaper on Flipkart*: Flipkart is $\ge 5\%$ cheaper than Amazon $\rightarrow$ Fake Deal (`⚠️ Cheaper on Flipkart: ₹X ↗`).
 * **Strict Category Batch Verification with Caching**: Gated candidate verification with a 6-hour SQLite `flipkart_cache` to keep repeat lookups under 1ms.
 * **Test Suite Expansion**: Comprehensive test coverage across `tests/test_flipkart_matcher.py` bringing total passed tests to **82**.
+
+### 8. Release v2.2.0: Multi-Dimensional Deal Quality Score (MDQS v3.0), Coupon Engine & Catalog Anti-Scam Shield (October 2026)
+Following a comprehensive multi-agent audit by 3 specialized autonomous agents (Quant/Arbitrage, Catalog Scam Adversary, and Consumer Psychology), the scoring and deal verification pipeline was overhauled to eliminate discount myopia and catalog manipulation:
+
+* **Multi-Dimensional Deal Quality Score (MDQS v3.0)**:
+  - Replaced the vulnerable 60% discount formula with a 4-factor utility blend:
+    $$S_{\text{base}} = 0.35 \cdot U_{\text{relative}} + 0.35 \cdot U_{\text{cash}}(\Delta \text{INR}) + 0.18 \cdot U_{\text{rating}} + 0.12 \cdot U_{\text{reviews}}$$
+  - **Absolute Cash Savings Utility ($U_{\text{cash}}$)**: Log-concave utility over $[0, ₹50,000]$ ensuring a ₹20,000 cash cut on a laptop is not outscored by a ₹200 phone case with an 80% markdown.
+  - **Shifted Bayesian Rating ($U_{\text{rating}}$)**: Calibrates empirical Bayes shrinkage ($m=3.8, C=10$) into the effective quality range $[3.0, 5.0]$, preventing mediocre 3.8★ products from scoring 76/100.
+  - **Central Limit Theorem Review Scaling ($U_{\text{reviews}}$)**: Statistical certainty scales logarithmically $\frac{\log_{10}(N+1)}{\log_{10}(10001)} \times 100$, capping at 10,000 reviews.
+
+* **Amazon Coupon Extraction & Effective Pricing**:
+  - `parse_coupon_discount()` extracts numeric values from Amazon coupon badges (`"Save ₹500 with coupon"`, `"Apply 10% coupon"`).
+  - Calculates $P_{\text{eff}} = P_{\text{curr}} - \text{Coupon}$, dynamically adjusting effective discounts and passing true net prices into Flipkart arbitrage verification.
+
+* **Adaptive Cross-Market Parity Band & Asymmetric Penalty**:
+  - **Adaptive Tolerance $\tau(P)$**: $\tau(P) = \max(50, \min(0.05P, 1500))$. Absorbs delivery noise (< ₹50) on low-ticket items while capping price indifference at ₹1,500 on high-ticket tech. A ₹5,000 difference on a ₹1.6L laptop is correctly hailed as a True Deal rather than dismissed as "parity".
+  - **Multiplicative Overpricing Crush**: If Flipkart is $\ge 20\%$ or $\ge ₹2,000$ cheaper, Amazon's deal score is crushed multiplicatively to single digits ($S \times 0.15 \le 12$) and stripped of true-deal badging.
+
+* **Catalog Anti-Scam Hardening**:
+  - **Renewed Relic Defense**: Detects `(Renewed)`, `(Refurbished)`, and `Pre-owned` tags. Deducts 20 points from deal score, enforces a strict $\ge 50\%$ true deal discount threshold, and blocks cross-matching renewed items against brand-new Flipkart items.
+  - **Accessory Smuggling Filters**: Detects phone cases, cables, and screen protectors using `is_accessory_title()` and filters them out of primary device browse-nodes (Laptops, Smartphones, Tablets, TVs, Monitors).
+  - **Trust Modifiers**: Rewards verified Amazon Prime fulfillment (+6) and Best Seller / Amazon's Choice (+4); penalizes unreviewed non-Prime dropshippers (-15).
+
+* **Frontend UI Enhancements**:
+  - Live green coupon pills: `🎟️ Save ₹X with coupon (Effective: ₹X)`.
+  - Gold hard-cash savings tags: `💰 Save ₹X,XXX` for savings $\ge ₹1,000$.
+  - Renewed indicators: `♻️ Renewed` tag.
+  - Blue Prime badge: `✓ Prime`.
+  - Bumped release tag to `v2.2.0` across header and assets.
+
+* **Testing**: 113/113 automated pytest unit tests passing.
 
 ### 7. Release v2.1.0: Zero-Tolerance Hardware Conflict Gating & High-Speed Verification Engine (October 2026)
 * **13-Layer Zero-Tolerance Hardware Conflict Gating (`scraper/flipkart.py`)**:

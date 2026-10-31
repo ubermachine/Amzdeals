@@ -50,6 +50,6 @@ def test_api_version_endpoint(client):
     response = client.get("/api/version")
     assert response.status_code == 200
     data = response.json()
-    assert data["version"] == "2.1.0"
-    assert data["release"] == "v2.1.0"
+    assert data["version"] == "2.2.0"
+    assert data["release"] == "v2.2.0"
     assert data["status"] == "healthy"

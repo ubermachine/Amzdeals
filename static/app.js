@@ -409,6 +409,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.classList.add('true-deal');
             }
 
+            // Prime badge
+            let primeBadge = '';
+            if (product.is_prime) {
+                primeBadge = `<span class="prime-tag">✓ Prime</span>`;
+            }
+
+            // Refurbished tag
+            let refurbishedBadge = '';
+            if (product.is_refurbished) {
+                refurbishedBadge = `<span class="refurbished-tag">♻️ Renewed</span>`;
+            }
+
+            // Hard cash savings tag
+            let cashSavingsBadge = '';
+            const effectiveP = product.effective_price || product.current_price;
+            const savings = (product.original_price && effectiveP) ? (product.original_price - effectiveP) : 0;
+            if (savings >= 1000) {
+                cashSavingsBadge = `<span class="cash-savings-tag">💰 Save ₹${Math.round(savings).toLocaleString('en-IN')}</span>`;
+            }
+
+            // Coupon badge
+            let couponBadge = '';
+            if (product.coupon_discount && product.coupon_discount > 0) {
+                const effText = product.effective_price ? ` (Effective: ₹${Math.round(product.effective_price).toLocaleString('en-IN')})` : '';
+                couponBadge = `<div class="coupon-badge" title="${escapeHtml(product.coupon || '')}">🎟️ Save ₹${Math.round(product.coupon_discount).toLocaleString('en-IN')} with coupon${effText}</div>`;
+            } else if (product.coupon) {
+                couponBadge = `<div class="coupon-badge">${escapeHtml(product.coupon)}</div>`;
+            }
+
             // Cross-market Flipkart badge
             let flipkartBadge = '';
             if (product.cross_market && product.cross_market.match_found) {
@@ -468,6 +497,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="product-info">
                     <div class="product-badges-row">
                         ${amazonBadge}
+                        ${primeBadge}
+                        ${cashSavingsBadge}
+                        ${refurbishedBadge}
                         ${trueDealTag}
                     </div>
                     <h3 class="product-title" title="${escapeHtml(product.title)}">${escapeHtml(product.title)}</h3>
@@ -478,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="current-price">${currentPriceText}</span>
                         ${originalPriceText ? `<span class="original-price">${originalPriceText}</span>` : ''}
                     </div>
+                    ${couponBadge}
                     ${flipkartBadge}
                     <a href="${escapeHtml(product.product_url)}" target="_blank" rel="noopener noreferrer" class="view-btn">View on Amazon</a>
                     ${product.asin ? `<button class="keepa-btn" data-asin="${escapeHtml(product.asin)}">View Price History</button>` : ''}
