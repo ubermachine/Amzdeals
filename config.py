@@ -98,10 +98,6 @@ TOP_DEALS_LIMIT = 8       # optimal golden number (2x4 desktop, 2x3 laptop, 4x2 
 MIN_DEAL_SCORE_FLOOR = 60.0  # minimum MDQS threshold for curated deal status
 BRAND_DIVERSITY_MAX_PER_BRAND = 2  # maximum deals per brand in a single query
 
-# Optional Semantic Reranker (Fail-open)
-OLLAMA_ENABLED = True
-OLLAMA_MODEL = "nomic-embed-text"
-OLLAMA_HOST = "http://localhost:11434"
 
 # Safety
 MAX_CONCURRENT_SCRAPES = 1  # max concurrent HTTP requests to Amazon

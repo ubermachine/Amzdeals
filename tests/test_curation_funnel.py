@@ -9,7 +9,6 @@ from scraper.engine import (
     get_query_price_floor,
     filter_and_curate_deals,
 )
-from scraper.semantic import is_ollama_available, semantic_rerank_deals
 
 
 def test_golden_number_and_single_page_config():
@@ -150,14 +149,50 @@ def test_model_family_deduplication():
     assert hp_deals[0]["deal_score"] == 84
 
 
-@pytest.mark.asyncio
-async def test_fail_open_semantic_reranker():
-    """Verify that semantic reranker is 100% fail-open and never raises exceptions."""
-    prods = [
-        {"title": "Apple MacBook Air M2", "current_price": 89000.0, "deal_score": 88},
-        {"title": "Lenovo IdeaPad Slim 3", "current_price": 38000.0, "deal_score": 82},
-    ]
-    # Even if Ollama daemon is offline or library not installed, must fail open cleanly
-    result = await semantic_rerank_deals("laptop", prods)
-    assert len(result) == 2
-    assert result[0]["title"] == "Apple MacBook Air M2"
+def test_is_query_entity_match_laptop():
+    """Verify 'laptop' query accepts laptops/macbooks and rejects desktop PCs, towers, and docking stations."""
+    assert is_query_entity_match("HP Pavilion 15 Intel Core i5 Laptop", "laptop") is True
+    assert is_query_entity_match("Apple MacBook Air 13-inch M2", "laptop") is True
+    assert is_query_entity_match("Lenovo IdeaPad Slim 3 Thin & Light Notebook", "laptop") is True
+    # Intruders
+    assert is_query_entity_match("Dell OptiPlex Desktop PC Tower Computer", "laptop") is False
+    assert is_query_entity_match("HP 24-inch All-in-One PC Core i5", "laptop") is False
+    assert is_query_entity_match("USB-C Triple Display Docking Station for Laptop", "laptop") is False
+
+
+def test_is_query_entity_match_mobile():
+    """Verify 'mobile' query accepts genuine phones and rejects tablets, smartwatches, and gimbals."""
+    assert is_query_entity_match("Apple iPhone 15 (128 GB) - Black", "mobile") is True
+    assert is_query_entity_match("Samsung Galaxy S24 5G (8GB RAM, 128GB Storage)", "mobile") is True
+    assert is_query_entity_match("OnePlus 12R 5G (Cool Blue, 8GB RAM)", "mobile") is True
+    assert is_query_entity_match("Realme Narzo 60X 5G", "mobile") is True
+    # Intruders
+    assert is_query_entity_match("Apple iPad 10th Gen 10.9-inch Tablet", "mobile") is False
+    assert is_query_entity_match("Samsung Galaxy Watch 6 Bluetooth Smartwatch", "mobile") is False
+    assert is_query_entity_match("DJI Osmo Mobile 6 Smartphone Gimbal Stabilizer", "mobile") is False
+    assert is_query_entity_match("Mi 20000mAh Power Bank 3i Fast Charging", "mobile") is False
+
+
+def test_is_query_entity_match_tv_and_audio():
+    """Verify TV and Audio intruder rejection."""
+    assert is_query_entity_match("Sony Bravia 55 inch 4K Ultra HD Smart TV", "tv") is True
+    assert is_query_entity_match("Full HD 1080P Smart LED Projector for Home", "tv") is False
+    assert is_query_entity_match("Heavy Duty Fixed TV Wall Mount Bracket", "tv") is False
+
+    assert is_query_entity_match("Sony WH-1000XM5 Wireless Noise Cancelling Headphones", "headphones") is True
+    assert is_query_entity_match("boAt Airdopes 141 True Wireless Earbuds TWS", "headphones") is True
+    assert is_query_entity_match("JBL Bar 500 Dolby Atmos Wireless Soundbar", "headphones") is False
+
+
+def test_get_query_price_floor_mobile():
+    """Verify that queries like 'mobile', 'phone', 'smartphone' properly trigger the ₹4,500 floor."""
+    assert get_query_price_floor("mobile") == 4500.0
+    assert get_query_price_floor("phone") == 4500.0
+    assert get_query_price_floor("smartphone") == 4500.0
+    assert get_query_price_floor("iphone") == 4500.0
+    assert get_query_price_floor("laptop") == 12000.0
+    assert get_query_price_floor("notebook") == 12000.0
+    assert get_query_price_floor("macbook") == 12000.0
+    assert get_query_price_floor("microwave") == 3500.0
+    assert get_query_price_floor("earbuds") == 499.0
+    assert get_query_price_floor("smartwatch") == 999.0

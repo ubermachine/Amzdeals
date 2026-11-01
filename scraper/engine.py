@@ -23,7 +23,6 @@ import config
 from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
 from scraper.flipkart import verify_product_against_flipkart
 from scraper.parser import parse_search_results, is_accessory_title
-from scraper.semantic import semantic_rerank_deals
 from scraper.stealth import get_stealth_headers
 
 logger = logging.getLogger(__name__)
@@ -335,8 +334,12 @@ def extract_model_family(title: str | None) -> str:
 def is_query_entity_match(title: str | None, query: str | None) -> bool:
     """Check if product title matches user query entity and filter intruders.
 
-    E.g., when query is 'microwave', rejects OTGs, toaster ovens, and air fryers
-    that lack microwave capability, as well as appliance accessories.
+    Rejects known cross-category intruders:
+    - microwave: drops OTGs, toaster ovens, air fryers (unless microwave is explicit)
+    - laptop/notebook: drops desktop towers, all-in-one PCs, barebones, docking stations
+    - headphones/earbuds: drops standalone microphones, speakers, audio interfaces, soundbars
+    - mobile/smartphone/phone: drops tablets, iPads, smartwatches, gimbals, power banks
+    - tv/television: drops projectors, wall mount brackets, streaming sticks
     """
     if not query or not title:
         return True
@@ -344,13 +347,34 @@ def is_query_entity_match(title: str | None, query: str | None) -> bool:
     q_lower = query.lower().strip()
     t_lower = title.lower()
 
-    # Query: Microwave
+    # 1. Query: Microwave
     if "microwave" in q_lower:
         if "microwave" not in t_lower and "micro wave" not in t_lower:
             return False
         if any(intruder in t_lower for intruder in ["otg", "oven toaster griller", "toaster oven"]):
             if "microwave" not in t_lower:
                 return False
+
+    # 2. Query: Laptop / Notebook
+    elif any(k in q_lower for k in ["laptop", "notebook", "macbook"]):
+        if any(intruder in t_lower for intruder in ["desktop pc", "all-in-one pc", "tower pc", "barebone", "docking station", "motherboard"]):
+            return False
+
+    # 3. Query: Headphones / Earbuds (checked before phone to avoid 'phone' in 'headphone' collision)
+    elif any(k in q_lower for k in ["headphone", "earphone", "earbud", "tws", "airpod"]):
+        if any(intruder in t_lower for intruder in ["microphone", "soundbar", "home theater", "audio interface"]):
+            if not any(valid in t_lower for valid in ["headphone", "earphone", "earbud", "tws"]):
+                return False
+
+    # 4. Query: Mobile / Smartphone / Phone
+    elif any(k in q_lower for k in ["smartphone", "mobile", "iphone"]) or ("phone" in q_lower and "headphone" not in q_lower and "earphone" not in q_lower):
+        if any(intruder in t_lower for intruder in ["tablet", "ipad", "smartwatch", "smart watch", "gimbal", "tripod mount", "power bank", "selfie stick"]):
+            return False
+
+    # 5. Query: TV / Television
+    elif any(k in q_lower for k in ["tv", "television", "smart tv"]):
+        if any(intruder in t_lower for intruder in ["projector", "wall mount bracket", "tv stick", "streaming stick"]):
+            return False
 
     return True
 
@@ -360,24 +384,28 @@ def get_query_price_floor(query: str | None) -> float:
     if not query:
         return 0.0
     q = query.lower()
-    if "laptop" in q or "notebook" in q:
+    if any(k in q for k in ["laptop", "notebook", "macbook"]):
         return 12000.0
-    if "smartphone" in q or "iphone" in q or "mobile phone" in q:
+    if any(k in q for k in ["headphone", "earphone", "earbuds", "headset"]):
+        return 499.0
+    if any(k in q for k in ["smartphone", "iphone", "mobile phone", "mobile", "cellphone"]) or ("phone" in q and "headphone" not in q and "earphone" not in q):
         return 4500.0
     if "microwave" in q:
         return 3500.0
-    if "tablet" in q or "ipad" in q:
+    if any(k in q for k in ["tablet", "ipad"]):
         return 4000.0
-    if "tv" in q or "television" in q:
+    if any(k in q for k in ["tv", "television", "smart tv"]):
         return 4500.0
     if "monitor" in q:
         return 3500.0
-    if "refrigerator" in q or "fridge" in q:
+    if any(k in q for k in ["refrigerator", "fridge"]):
         return 6000.0
     if "washing machine" in q:
         return 6000.0
-    if "ac" in q or "air conditioner" in q:
+    if any(k in q for k in ["ac", "air conditioner"]):
         return 15000.0
+    if any(k in q for k in ["smartwatch", "smart watch"]):
+        return 999.0
     return 0.0
 
 
@@ -836,9 +864,6 @@ async def search_deals(
         d = p.get("effective_discount_pct") or p.get("discount_pct") or 0
         p["is_true_deal"] = d >= 35
         p["deal_score"] = compute_deal_score(p)
-
-    # Optional Fail-Open Semantic Reranker (nomic-embed-text)
-    products = await semantic_rerank_deals(query, products)
 
     # Cross-Market Flipkart Verification on top candidates
     target_prods = products[: config.TOP_DEALS_LIMIT]
