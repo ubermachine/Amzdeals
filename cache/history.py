@@ -62,6 +62,36 @@ def init_history_db(db_path: str = DEFAULT_HISTORY_DB) -> None:
         conn.close()
 
 
+def has_snapshot_for_date(snapshot_date: str | None = None, db_path: str = DEFAULT_HISTORY_DB) -> bool:
+    """Check if a deal snapshot has already been recorded for a specific date."""
+    init_history_db(db_path)
+    today = snapshot_date or datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        count = cursor.execute(
+            "SELECT COUNT(*) FROM deal_snapshots WHERE snapshot_date = ?", (today,)
+        ).fetchone()[0]
+        return count > 0
+    finally:
+        conn.close()
+
+
+def get_snapshot_count_for_date(snapshot_date: str | None = None, db_path: str = DEFAULT_HISTORY_DB) -> int:
+    """Return the number of unique deals recorded for a specific date."""
+    init_history_db(db_path)
+    today = snapshot_date or datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        count = cursor.execute(
+            "SELECT COUNT(DISTINCT asin) FROM deal_snapshots WHERE snapshot_date = ?", (today,)
+        ).fetchone()[0]
+        return count
+    finally:
+        conn.close()
+
+
 def record_deal_snapshot(
     product: dict,
     category: str,

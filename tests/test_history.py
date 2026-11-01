@@ -11,6 +11,8 @@ from cache.history import (
     get_snapshots_by_date,
     compare_snapshots,
     dump_cache_to_snapshots,
+    has_snapshot_for_date,
+    get_snapshot_count_for_date,
 )
 
 
@@ -140,3 +142,18 @@ def test_compare_snapshots_detects_price_drops_and_new_deals(temp_history_db):
     # Verify expired deal
     expired = comparison["expired_deals"][0]
     assert expired["asin"] == "B0SHOE0001"
+
+
+def test_has_snapshot_for_date_and_count(temp_history_db):
+    assert not has_snapshot_for_date("2026-11-05", db_path=temp_history_db)
+    assert get_snapshot_count_for_date("2026-11-05", db_path=temp_history_db) == 0
+
+    item = {
+        "asin": "B0TESTAUTO1",
+        "title": "Test Item",
+        "current_price": 999.0,
+    }
+    record_deal_snapshot(item, "TestCat", snapshot_date="2026-11-05", db_path=temp_history_db)
+
+    assert has_snapshot_for_date("2026-11-05", db_path=temp_history_db)
+    assert get_snapshot_count_for_date("2026-11-05", db_path=temp_history_db) == 1
