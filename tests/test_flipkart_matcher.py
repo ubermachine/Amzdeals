@@ -3,9 +3,12 @@
 import pytest
 from scraper.flipkart import (
     classify_cross_market_verdict,
+    extract_device_model_numbers,
     extract_product_signature,
+    has_chipset_or_series_conflict,
     parse_flipkart_html,
     score_flipkart_match,
+    verify_product_against_flipkart,
 )
 
 
@@ -498,3 +501,101 @@ def test_score_flipkart_match_rejects_renewed_vs_new():
         "price": 52990.0,
     }
     assert score_flipkart_match(sig, amazon_price=36990.0, candidate=candidate) == 0.0
+
+
+def test_extract_device_model_numbers_excludes_units_and_ordinals():
+    """Ensure units (20L, 16GB, 144HZ, 55CM), ordinals (13TH), and non-digit hyphen words (UNISEX-ADULT) are excluded."""
+    title = 'Lenovo 13th Gen Intel 16GB RAM 512GB SSD 144HZ Puma Unisex-Adult Low-Top Midea 20L Solo'
+    models = extract_device_model_numbers(title)
+    assert "20L" not in models
+    assert "16GB" not in models
+    assert "512GB" not in models
+    assert "144HZ" not in models
+    assert "13TH" not in models
+    assert "UNISEX-ADULT" not in models
+    assert "LOW-TOP" not in models
+
+
+def test_search_query_builder_preserves_cpu_model_components():
+    """Ensure CPU model with hyphen like i5-13420H splits into 'i5' and '13420h' rather than 'i513420h'."""
+    title = 'Lenovo IdeaPad Slim 3 13th Gen Intel Core i5-13420H 15.6 inch FHD Laptop'
+    sig = extract_product_signature(title)
+    q = sig["search_query"]
+    assert "i513420h" not in q
+    assert "i5" in q or "13420h" in q
+    assert "ideapad" in q
+    assert "lenovo" in q
+
+
+def test_has_chipset_or_series_conflict_no_false_conflict_on_shoes_and_appliances():
+    """Ensure Gate 17 does not trigger false conflict on appliances with different capacity notation or apparel terms."""
+    # Midea microwave
+    amz_mw = "Midea 20L Solo Microwave Oven (White)"
+    fk_mw = "Midea 20 L Solo Microwave Oven White"
+    assert not has_chipset_or_series_conflict(amz_mw, fk_mw)
+
+    # Puma shoes
+    amz_shoe = "Puma Unisex-Adult Smashic Retro Sneaker"
+    fk_shoe = "Puma Smashic Retro Low-Top Sneakers For Men"
+    assert not has_chipset_or_series_conflict(amz_shoe, fk_shoe)
+
+
+def test_score_flipkart_match_iphone_high_confidence():
+    """Apple iPhone 15 must match high confidence >= 90.0."""
+    amz_title = "Apple iPhone 15 (128 GB) - Black"
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Apple iPhone 15 (Black, 128 GB)",
+        "price": 54990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=57990.0, candidate=candidate)
+    assert score >= 90.0
+
+
+def test_score_flipkart_match_lenovo_laptop_high_confidence():
+    """Lenovo IdeaPad Slim 3 i5-13420H must match high confidence >= 90.0."""
+    amz_title = 'Lenovo IdeaPad Slim 3 13th Gen Intel Core i5-13420H 15.6" (16GB/512GB SSD)'
+    sig = extract_product_signature(amz_title)
+    candidate = {
+        "title": "Lenovo IdeaPad Slim 3 Intel Core i5 13th Gen 13420H - (16 GB/512 GB SSD)",
+        "price": 53990.0,
+    }
+    score = score_flipkart_match(sig, amazon_price=56990.0, candidate=candidate)
+    assert score >= 90.0
+
+
+@pytest.mark.asyncio
+async def test_verify_product_against_flipkart_accepts_score_60_range():
+    """Products scoring in the 55.0 - 69.9 range (brand + specs + tokens) must be accepted as verified."""
+    from unittest.mock import AsyncMock, patch
+
+    mock_cache = AsyncMock()
+    mock_cache.get_flipkart = AsyncMock(return_value=None)
+    mock_cache.set_flipkart = AsyncMock()
+
+    mock_session = AsyncMock()
+
+    # Brand match (30) + specs match (20) + partial token match (6.7) = 56.7, no series bonus
+    product = {
+        "asin": "B0TESTSPEC",
+        "title": "Crucial Basics 16GB DDR4 3200MHz Laptop Memory",
+        "current_price": 2899.0,
+    }
+    mock_candidates = [
+        {
+            "title": "Crucial 16GB DDR4 RAM for Laptop",
+            "price": 2949.0,
+            "mrp": 3999.0,
+            "rating": 4.4,
+            "url": "https://www.flipkart.com/crucial-16gb",
+        }
+    ]
+
+    with patch("scraper.flipkart.fetch_flipkart_candidates", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = mock_candidates
+        res = await verify_product_against_flipkart(product, mock_session, mock_cache)
+
+    assert res["match_found"] is True
+    assert res["verdict"] == "market_parity"
+    assert res["match_confidence"] >= 55.0
+
