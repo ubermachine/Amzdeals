@@ -54,3 +54,32 @@ def test_api_version_endpoint(client):
     assert data["version"] == config.APP_VERSION
     assert data["release"] == f"v{config.APP_VERSION}"
     assert data["status"] == "healthy"
+
+
+def test_api_snapshot_endpoints(client):
+    """Verify daily snapshot REST API endpoints."""
+    # 1. Dates endpoint
+    res_dates = client.get("/api/snapshots/dates")
+    assert res_dates.status_code == 200
+    assert isinstance(res_dates.json(), list)
+
+    # 2. Dump endpoint
+    res_dump = client.post("/api/snapshots/dump?date=2026-11-01")
+    assert res_dump.status_code == 200
+    dump_data = res_dump.json()
+    assert dump_data["status"] == "success"
+
+    # 3. Deals endpoint
+    res_deals = client.get("/api/snapshots/deals?date=2026-11-01")
+    assert res_deals.status_code == 200
+    deals_data = res_deals.json()
+    assert deals_data["snapshot_date"] == "2026-11-01"
+    assert "deals" in deals_data
+
+    # 4. Compare endpoint
+    res_comp = client.get("/api/snapshots/compare?date1=2026-11-01&date2=2026-11-01")
+    assert res_comp.status_code == 200
+    comp_data = res_comp.json()
+    assert "summary" in comp_data
+    assert "price_drops" in comp_data
+    assert "new_deals" in comp_data

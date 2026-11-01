@@ -164,6 +164,7 @@ cache.db
 
 
 *.db
-
 *.db-wal
 *.db-shm
+deals_*.csv
+deals_*.json

@@ -8,6 +8,12 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import config
+from cache.history import (
+    dump_cache_to_snapshots,
+    list_snapshot_dates,
+    get_snapshots_by_date,
+    compare_snapshots,
+)
 from cache.sqlite_cache import SearchCache
 from scraper.engine import search_deals, search_category_deals
 
@@ -166,6 +172,43 @@ async def api_keepa_graph(
             "Access-Control-Allow-Origin": "*",
         },
     )
+
+
+@app.get("/api/snapshots/dates")
+async def api_snapshot_dates():
+    """List all available daily deal snapshot dates with aggregate metrics."""
+    return list_snapshot_dates()
+
+
+@app.post("/api/snapshots/dump")
+async def api_snapshot_dump(date: str | None = None):
+    """Dump all current cached deals into daily snapshot history."""
+    count = dump_cache_to_snapshots(snapshot_date=date)
+    return {
+        "status": "success",
+        "recorded_count": count,
+        "snapshot_date": date or "today",
+    }
+
+
+@app.get("/api/snapshots/deals")
+async def api_snapshot_deals(date: str = Query(..., description="Snapshot date in YYYY-MM-DD format")):
+    """Get all deal records for a specific snapshot date."""
+    deals = get_snapshots_by_date(date)
+    return {
+        "snapshot_date": date,
+        "count": len(deals),
+        "deals": deals,
+    }
+
+
+@app.get("/api/snapshots/compare")
+async def api_snapshot_compare(
+    date1: str = Query(..., description="Earlier snapshot date (e.g. 2026-11-01)"),
+    date2: str = Query(..., description="Later snapshot date (e.g. 2026-11-02)"),
+):
+    """Compare two snapshot dates to detect price drops, hikes, new deals, and expired deals."""
+    return compare_snapshots(date1, date2)
 
 
 # Mount static files at root
