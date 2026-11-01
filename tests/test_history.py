@@ -13,6 +13,8 @@ from cache.history import (
     dump_cache_to_snapshots,
     has_snapshot_for_date,
     get_snapshot_count_for_date,
+    get_snapshot_categories_for_date,
+    is_daily_snapshot_complete,
 )
 
 
@@ -157,3 +159,16 @@ def test_has_snapshot_for_date_and_count(temp_history_db):
 
     assert has_snapshot_for_date("2026-11-05", db_path=temp_history_db)
     assert get_snapshot_count_for_date("2026-11-05", db_path=temp_history_db) == 1
+
+
+def test_snapshot_categories_and_completeness(temp_history_db):
+    assert get_snapshot_categories_for_date("2026-11-06", db_path=temp_history_db) == set()
+    assert not is_daily_snapshot_complete("2026-11-06", expected_categories=2, db_path=temp_history_db)
+
+    record_deal_snapshot({"asin": "A1", "title": "Item 1"}, "Laptops", snapshot_date="2026-11-06", db_path=temp_history_db)
+    record_deal_snapshot({"asin": "A2", "title": "Item 2"}, "Smartphones", snapshot_date="2026-11-06", db_path=temp_history_db)
+
+    cats = get_snapshot_categories_for_date("2026-11-06", db_path=temp_history_db)
+    assert cats == {"Laptops", "Smartphones"}
+    assert is_daily_snapshot_complete("2026-11-06", expected_categories=2, db_path=temp_history_db)
+    assert not is_daily_snapshot_complete("2026-11-06", expected_categories=3, db_path=temp_history_db)
