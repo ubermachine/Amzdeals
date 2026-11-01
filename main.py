@@ -17,6 +17,8 @@ from cache.history import (
     compare_snapshots,
     has_snapshot_for_date,
     get_snapshot_count_for_date,
+    get_snapshot_categories_for_date,
+    is_daily_snapshot_complete,
 )
 from cache.sqlite_cache import SearchCache
 from scraper.engine import search_deals, search_category_deals
@@ -36,39 +38,66 @@ _cache: SearchCache | None = None
 
 
 async def _run_startup_snapshot_check(cache: SearchCache) -> None:
-    """Non-blocking startup check: automatically records daily deal snapshot once per day."""
+    """Non-blocking startup check: automatically records daily deal snapshot across all 18 categories once per day."""
     today = datetime.now().strftime("%Y-%m-%d")
     try:
-        if has_snapshot_for_date(today):
+        all_categories = config.CATEGORIES
+        recorded_cats = get_snapshot_categories_for_date(today)
+        missing_cats = [c for c in all_categories if c["name"] not in recorded_cats]
+
+        # 1. If already complete across all categories, skip in 0.5ms (no redundant work on restart)
+        if not missing_cats:
             count = get_snapshot_count_for_date(today)
-            logger.info("[DealTracker] Today's snapshot (%s) is already recorded (%d deals). Skipping.", today, count)
+            logger.info(
+                "[DealTracker] Today's snapshot (%s) is already complete across all %d categories (%d deals). Skipping.",
+                today,
+                len(all_categories),
+                count,
+            )
             return
 
-        logger.info("[DealTracker] No snapshot found for today (%s). Initializing daily deal snapshot...", today)
-        count = dump_cache_to_snapshots(snapshot_date=today)
-        if count >= 20:
-            logger.info("[DealTracker] Successfully recorded %d deals for today (%s) from cache.", count, today)
-            return
+        logger.info(
+            "[DealTracker] Snapshot for %s has %d categories recorded (%d missing). Ensuring all categories are captured...",
+            today,
+            len(recorded_cats),
+            len(missing_cats),
+        )
 
-        logger.info("[DealTracker] Cache has limited items (%d). Sweeping top categories in background...", count)
-        top_categories = config.CATEGORIES[:6]
-        for cat in top_categories:
-            try:
-                res = await search_category_deals(
-                    node=cat["node"],
-                    category_name=cat["name"],
-                    cache=cache,
-                )
-                for p in res.get("products", []):
-                    from cache.history import record_deal_snapshot
-                    record_deal_snapshot(p, category=cat["name"], snapshot_date=today, node=cat["node"])
-            except Exception as e:
-                logger.warning("[DealTracker] Background sweep failed for category %s: %s", cat["name"], e)
+        # 2. First dump any existing cached deals for today
+        dump_cache_to_snapshots(snapshot_date=today)
+        recorded_cats = get_snapshot_categories_for_date(today)
+        missing_cats = [c for c in all_categories if c["name"] not in recorded_cats]
+
+        # 3. Sweep any remaining missing categories in the background
+        if missing_cats:
+            logger.info("[DealTracker] Sweeping %d missing categories in background...", len(missing_cats))
+            for cat in missing_cats:
+                try:
+                    res = await search_category_deals(
+                        node=cat["node"],
+                        category_name=cat["name"],
+                        min_discount=config.DEFAULT_MIN_DISCOUNT,
+                        max_discount=config.DEFAULT_MAX_DISCOUNT,
+                        cache=cache,
+                    )
+                    for p in res.get("products", []):
+                        from cache.history import record_deal_snapshot
+                        record_deal_snapshot(p, category=cat["name"], snapshot_date=today, node=cat["node"])
+                except Exception as e:
+                    logger.warning("[DealTracker] Daily sweep failed for category %s: %s", cat["name"], e)
+                # Polite pacing between uncached category scrapes
+                await asyncio.sleep(1.0)
 
         total_now = get_snapshot_count_for_date(today)
-        logger.info("[DealTracker] Completed startup snapshot for %s: %d total unique deals recorded.", today, total_now)
+        cats_now = get_snapshot_categories_for_date(today)
+        logger.info(
+            "[DealTracker] Daily snapshot for %s complete: %d categories, %d unique deals recorded.",
+            today,
+            len(cats_now),
+            total_now,
+        )
     except Exception as e:
-        logger.error("[DealTracker] Error during startup snapshot check: %s", e)
+        logger.error("[DealTracker] Error during daily snapshot check: %s", e)
 
 
 @asynccontextmanager

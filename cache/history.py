@@ -92,6 +92,31 @@ def get_snapshot_count_for_date(snapshot_date: str | None = None, db_path: str =
         conn.close()
 
 
+def get_snapshot_categories_for_date(snapshot_date: str | None = None, db_path: str = DEFAULT_HISTORY_DB) -> set[str]:
+    """Return the set of categories recorded for a specific date."""
+    init_history_db(db_path)
+    today = snapshot_date or datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        rows = cursor.execute(
+            "SELECT DISTINCT category FROM deal_snapshots WHERE snapshot_date = ?", (today,)
+        ).fetchall()
+        return {r[0] for r in rows if r[0]}
+    finally:
+        conn.close()
+
+
+def is_daily_snapshot_complete(
+    snapshot_date: str | None = None,
+    expected_categories: int = 18,
+    db_path: str = DEFAULT_HISTORY_DB,
+) -> bool:
+    """Check if all expected categories have been recorded for the day."""
+    cats = get_snapshot_categories_for_date(snapshot_date, db_path)
+    return len(cats) >= expected_categories
+
+
 def record_deal_snapshot(
     product: dict,
     category: str,
