@@ -127,7 +127,7 @@ def is_refurbished_title(title: str | None) -> bool:
 
 
 def is_accessory_title(title: str | None) -> bool:
-    """Check if title indicates a phone/laptop accessory (cases, tempered glass, cables)."""
+    """Check if title indicates a device/appliance accessory (cases, covers, cables, stands)."""
     if not title:
         return False
     lower = title.lower()
@@ -135,7 +135,10 @@ def is_accessory_title(title: str | None) -> bool:
         "case for", "cover for", "tempered glass", "screen protector",
         "laptop sleeve", "keyboard skin", "silicone case", "back cover",
         "charging cable", "cable protector", "wall mount", "protective case",
-        "stylus pen", "pouch for", "camera lens protector", "watch box", "watch organizer", "watch roll", "case for watch"
+        "stylus pen", "pouch for", "camera lens protector", "watch box",
+        "watch organizer", "watch roll", "case for watch", "microwave cover",
+        "oven cover", "microwave stand", "oven glove", "baking tray",
+        "glass bowl", "cleaner for"
     ]
     return any(trig in lower for trig in accessory_triggers)
 

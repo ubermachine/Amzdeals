@@ -13,6 +13,7 @@ import asyncio
 import logging
 import math
 import random
+import re
 import statistics
 from urllib.parse import urlencode
 
@@ -21,7 +22,8 @@ from curl_cffi import requests
 import config
 from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
 from scraper.flipkart import verify_product_against_flipkart
-from scraper.parser import parse_search_results
+from scraper.parser import parse_search_results, is_accessory_title
+from scraper.semantic import semantic_rerank_deals
 from scraper.stealth import get_stealth_headers
 
 logger = logging.getLogger(__name__)
@@ -278,6 +280,243 @@ def compute_deal_score(product: dict) -> int:
     return max(0, min(100, final_score))
 
 
+# ─── 5-Stage Curated Ranking Pipeline & Entity Disambiguation ──────────
+
+
+def extract_brand(title: str | None) -> str:
+    """Extract brand name from product title.
+
+    Amazon titles almost universally place the brand at the beginning.
+    Strips noise prefixes like '(Renewed)' or 'Refurbished' before extracting.
+    """
+    if not title:
+        return "Unknown"
+    cleaned = title.strip()
+    for prefix in ["(Renewed)", "(Refurbished)", "Renewed", "Refurbished", "Pre-Owned"]:
+        if cleaned.lower().startswith(prefix.lower()):
+            cleaned = cleaned[len(prefix):].strip()
+
+    known_multi = [
+        "fire-boltt", "fire boltt", "noise colorfit", "red tape", "apple watch",
+        "morphy richards", "eureka forbes", "havells", "crompton greaves"
+    ]
+    lower_c = cleaned.lower()
+    for b in known_multi:
+        if lower_c.startswith(b):
+            return b.title()
+
+    tokens = re.split(r"[\s\-_,]+", cleaned)
+    return tokens[0].capitalize() if tokens else "Unknown"
+
+
+def extract_model_family(title: str | None) -> str:
+    """Extract normalized model family string to deduplicate chassis/variants.
+
+    Groups variants of the same product (e.g. 8GB vs 16GB, color options)
+    so only the best-scoring deal per model family is presented.
+    """
+    if not title:
+        return ""
+    cleaned = re.sub(r"\(.*?\)|\[.*?\]", "", title.lower())
+    noise = {
+        "renewed", "refurbished", "pre-owned", "deal", "laptop", "smartphone",
+        "phone", "with", "and", "for", "black", "blue", "silver", "grey", "white"
+    }
+    tokens = [t for t in re.split(r"[^a-z0-9]+", cleaned) if t and t not in noise]
+    spec_patterns = [
+        r"^\d+gb$", r"^\d+tb$", r"^\d+l$", r"^\d+w$", r"^\d+hz$",
+        r"^i[3579]$", r"^r[3579]$", r"^ddr\d$", r"^ssd$", r"^ram$",
+        r"^fhd$", r"^uhd$", r"^\d+inch$", r"^\d+cm$"
+    ]
+    meaningful = [t for t in tokens if not any(re.match(p, t) for p in spec_patterns)]
+    return " ".join(meaningful[:3]) if meaningful else title[:20].lower().strip()
+
+
+def is_query_entity_match(title: str | None, query: str | None) -> bool:
+    """Check if product title matches user query entity and filter intruders.
+
+    E.g., when query is 'microwave', rejects OTGs, toaster ovens, and air fryers
+    that lack microwave capability, as well as appliance accessories.
+    """
+    if not query or not title:
+        return True
+
+    q_lower = query.lower().strip()
+    t_lower = title.lower()
+
+    # Query: Microwave
+    if "microwave" in q_lower:
+        if "microwave" not in t_lower and "micro wave" not in t_lower:
+            return False
+        if any(intruder in t_lower for intruder in ["otg", "oven toaster griller", "toaster oven"]):
+            if "microwave" not in t_lower:
+                return False
+
+    return True
+
+
+def get_query_price_floor(query: str | None) -> float:
+    """Determine minimum price floor based on search query keywords."""
+    if not query:
+        return 0.0
+    q = query.lower()
+    if "laptop" in q or "notebook" in q:
+        return 12000.0
+    if "smartphone" in q or "iphone" in q or "mobile phone" in q:
+        return 4500.0
+    if "microwave" in q:
+        return 3500.0
+    if "tablet" in q or "ipad" in q:
+        return 4000.0
+    if "tv" in q or "television" in q:
+        return 4500.0
+    if "monitor" in q:
+        return 3500.0
+    if "refrigerator" in q or "fridge" in q:
+        return 6000.0
+    if "washing machine" in q:
+        return 6000.0
+    if "ac" in q or "air conditioner" in q:
+        return 15000.0
+    return 0.0
+
+
+def filter_and_curate_deals(
+    products: list[dict],
+    limit: int = config.TOP_DEALS_LIMIT,
+    query: str | None = None,
+    node: str | None = None,
+    sort_by: str = "popularity",
+) -> list[dict]:
+    """Execute the 5-Stage Filtration & Curation Funnel to yield elite deals.
+
+    Stage 1: Semantic & Entity Gating (accessory exclusion, query entity match, price floors)
+    Stage 2: Fraud & Dropshipper Filter (unreviewed non-Prime drop, rating floor)
+    Stage 3: MDQS v3.0 Multi-Utility Scoring
+    Stage 4: Cross-Market Flipkart Arbitrage Gating
+    Stage 5: Anti-Cannibalization & Diversity Guard (model family dedup, brand saturation cap, quality floor)
+    """
+    if not products:
+        return []
+
+    # Stage 1: Semantic & Entity Gating
+    cat_meta = getattr(config, "CATEGORY_METADATA", {}).get(node, {}) if node else {}
+    min_price_cat = cat_meta.get("min_price", 0.0)
+    min_price_query = get_query_price_floor(query)
+    effective_min_price = max(min_price_cat, min_price_query)
+    is_device_node = (
+        node in getattr(config, "DEVICE_NODES_FOR_ACCESSORY_FILTER", set())
+        if node
+        else bool(query and effective_min_price >= 2000)
+    )
+
+    stage1_passed = []
+    for p in products:
+        title = p.get("title", "")
+        price = p.get("current_price") if p.get("current_price") is not None else p.get("price")
+
+        # Price floor gating
+        if price is not None and price < effective_min_price:
+            continue
+
+        # Accessory gating
+        if (is_device_node or p.get("is_accessory")) and is_accessory_title(title):
+            continue
+
+        # Query entity disambiguation (e.g. microwave vs OTG)
+        if query and not is_query_entity_match(title, query):
+            continue
+
+        stage1_passed.append(p)
+
+    # Stage 2: Fraud & Dropshipper Filter
+    stage2_passed = []
+    for p in stage1_passed:
+        reviews = p.get("review_count") or 0
+        is_prime = p.get("is_prime", False)
+        rating = p.get("rating")
+
+        # Discard zero-reputation dropshippers
+        if not is_prime and reviews < 10:
+            continue
+        # Discard severely bad rated products (sub-2.8 with reviews)
+        if rating is not None and rating < 2.8 and reviews >= 10:
+            continue
+
+        stage2_passed.append(p)
+
+    working_pool = stage2_passed if len(stage2_passed) >= 4 else stage1_passed
+    if not working_pool:
+        working_pool = products
+
+    # Determine sorting order
+    if sort_by == "deal_score":
+        working_pool.sort(key=lambda x: x.get("deal_score", 0), reverse=True)
+    elif sort_by == "discount":
+        working_pool.sort(key=lambda x: x.get("discount_pct") or 0, reverse=True)
+    elif sort_by == "reviews":
+        working_pool.sort(key=lambda x: x.get("review_count") or 0, reverse=True)
+    # When sort_by in ("popularity", "bestsellers"), keep Amazon's scraped order
+
+    # Stage 5: Diversity & Anti-Cannibalization Guard
+    # First, deduplicate variants within the same model family, retaining the highest scoring deal
+    best_per_family = {}
+    family_order = []
+    for p in working_pool:
+        mf = extract_model_family(p.get("title", ""))
+        key = mf if mf else (p.get("asin") or id(p))
+        if key not in best_per_family:
+            best_per_family[key] = p
+            family_order.append(key)
+        else:
+            existing = best_per_family[key]
+            p_metric = (p.get("deal_score", 0), p.get("discount_pct") or 0)
+            ex_metric = (existing.get("deal_score", 0), existing.get("discount_pct") or 0)
+            if p_metric > ex_metric:
+                best_per_family[key] = p
+
+    deduped_pool = [best_per_family[k] for k in family_order]
+
+    curated = []
+    brand_counts = {}
+    generic_brands = {"unknown", "product", "item", "generic"}
+    max_per_brand = getattr(config, "BRAND_DIVERSITY_MAX_PER_BRAND", 2)
+    score_floor = getattr(config, "MIN_DEAL_SCORE_FLOOR", 60.0)
+
+    # Pass 1: Products meeting the quality score floor
+    overflow_candidates = []
+    for p in deduped_pool:
+        title = p.get("title", "")
+        brand = extract_brand(title)
+        score = p.get("deal_score", 0)
+
+        # Skip saturated brand (unless generic/unidentified)
+        if brand.lower() not in generic_brands and brand_counts.get(brand, 0) >= max_per_brand:
+            continue
+
+        if score >= score_floor or p.get("is_true_deal"):
+            if brand.lower() not in generic_brands:
+                brand_counts[brand] = brand_counts.get(brand, 0) + 1
+            curated.append(p)
+            if len(curated) >= limit:
+                break
+        else:
+            overflow_candidates.append((p, brand))
+
+    # Pass 2: If fewer than 6 deals made the strict floor, allow top overflow candidates
+    if len(curated) < min(6, limit):
+        for p, brand in overflow_candidates:
+            if brand.lower() not in generic_brands and brand_counts.get(brand, 0) >= max_per_brand:
+                continue
+            if brand.lower() not in generic_brands:
+                brand_counts[brand] = brand_counts.get(brand, 0) + 1
+            curated.append(p)
+            if len(curated) >= limit:
+                break
+
+    return curated[:limit]
+
+
 # ─── Category deals (multi-page) ─────────────────────────────────────
 
 
@@ -364,10 +603,6 @@ async def search_category_deals(
                 seen_asins.add(asin)
                 all_products.append(p)
 
-        # Early exit if we have already accumulated target limit of deals
-        if len(all_products) >= config.TOP_DEALS_LIMIT:
-            break
-
     if not any_success:
         return {
             "category": category_name,
@@ -400,8 +635,8 @@ async def search_category_deals(
     # users see Flipkart price parity / deal verdicts across top cards.
     candidate_deals = [p for p in all_products if p.get("is_true_deal")]
     target_prods = list(candidate_deals[:6])
-    for p in all_products[:3]:
-        if p not in target_prods and len(target_prods) < 8:
+    for p in all_products[:4]:
+        if p not in target_prods and len(target_prods) < config.TOP_DEALS_LIMIT:
             target_prods.append(p)
 
     if target_prods:
@@ -432,18 +667,16 @@ async def search_category_deals(
                 except Exception as e:
                     logger.warning("Error verifying product %s on Flipkart: %s", prod.get("asin"), e)
 
-        # Batch verify target products (limit to 20 to keep latency tight)
+        # Batch verify target products
         await asyncio.gather(*[_verify_one(p) for p in target_prods])
 
-    if sort_by == "deal_score":
-        all_products.sort(key=lambda p: p["deal_score"], reverse=True)
-    elif sort_by == "discount":
-        all_products.sort(key=lambda p: p.get("discount_pct") or 0, reverse=True)
-    elif sort_by == "reviews":
-        all_products.sort(key=lambda p: p.get("review_count") or 0, reverse=True)
-    # When sort_by == "popularity", keep Amazon's scraped order (already bestseller popularity ranked)
-
-    top_products = all_products[: config.TOP_DEALS_LIMIT]
+    # Apply 5-Stage Curated Ranking Pipeline (dedup model families, brand saturation cap, score floor)
+    top_products = filter_and_curate_deals(
+        all_products,
+        limit=config.TOP_DEALS_LIMIT,
+        node=node,
+        sort_by=sort_by,
+    )
 
     result = {
         "category": category_name,
@@ -600,10 +833,16 @@ async def search_deals(
     products = parse_search_results(html)
 
     for p in products:
+        d = p.get("effective_discount_pct") or p.get("discount_pct") or 0
+        p["is_true_deal"] = d >= 35
         p["deal_score"] = compute_deal_score(p)
 
-    # Cross-Market Flipkart Verification on top search results
-    if products:
+    # Optional Fail-Open Semantic Reranker (nomic-embed-text)
+    products = await semantic_rerank_deals(query, products)
+
+    # Cross-Market Flipkart Verification on top candidates
+    target_prods = products[: config.TOP_DEALS_LIMIT]
+    if target_prods:
         session = await _get_flipkart_session()
         fk_semaphore = asyncio.Semaphore(5)
 
@@ -617,29 +856,40 @@ async def search_deals(
                     diff_pct = fk_res.get("diff_pct", 0.0)
 
                     if verdict == "market_parity":
+                        prod["is_true_deal"] = False
                         prod["deal_score"] = max(0, prod["deal_score"] - 15)
                     elif verdict == "cheaper_on_flipkart":
+                        prod["is_true_deal"] = False
                         if diff_pct >= 20.0 or fk_savings >= 2000.0:
                             prod["deal_score"] = min(12, max(0, round(prod["deal_score"] * 0.15)))
                         else:
                             prod["deal_score"] = max(0, prod["deal_score"] - 25)
                     elif verdict == "true_deal":
+                        prod["is_true_deal"] = True
                         prod["deal_score"] = min(100, prod["deal_score"] + 10)
                 except Exception as e:
                     logger.warning("Error verifying search product %s on Flipkart: %s", prod.get("asin"), e)
 
-        await asyncio.gather(*[_verify_one_search(p) for p in products[:5]])
+        await asyncio.gather(*[_verify_one_search(p) for p in target_prods])
+
+    # Apply 5-Stage Curated Ranking Pipeline (dedup model families, brand saturation cap, score floor)
+    top_products = filter_and_curate_deals(
+        products,
+        limit=config.TOP_DEALS_LIMIT,
+        query=query,
+        sort_by=sort_by,
+    )
 
     result = {
         "query": query,
         "page": page,
-        "products": products,
-        "total_results": len(products),
+        "products": top_products,
+        "total_results": len(top_products),
         "cached": False,
     }
 
     # Store in cache only when non-empty to avoid caching transient bot-checks/errors
-    if products:
+    if top_products:
         await cache.set(cache_key, result)
 
     return result

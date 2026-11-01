@@ -1,6 +1,6 @@
 """Central configuration for DealFinderAmazonPy."""
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 # Amazon
 AMAZON_BASE_URL = "https://www.amazon.in/s"
 AMAZON_PRODUCT_URL = "https://www.amazon.in/dp/{asin}"
@@ -87,12 +87,21 @@ ACCESSORY_KEYWORDS = [
     "case for", "cover for", "tempered glass", "screen protector",
     "laptop sleeve", "keyboard skin", "back cover", "silicone cover",
     "charging cable", "cable protector", "wall mount", "protective case",
-    "stylus pen", "pouch for", "skin wrap", "watch box", "watch organizer", "watch roll", "case for watch"
+    "stylus pen", "pouch for", "skin wrap", "watch box", "watch organizer",
+    "watch roll", "case for watch", "microwave cover", "oven cover",
+    "microwave stand", "oven glove", "baking tray", "glass bowl", "cleaner for"
 ]
 
-# Top Deals
-TOP_DEALS_PAGES = 2       # pages to scrape per category (2 dense pages)
-TOP_DEALS_LIMIT = 40      # optimal responsive limit (4x10, 3x13, 2x20)
+# Top Deals & Curation Engine
+TOP_DEALS_PAGES = 1       # fetch 1 dense page (48 items, zero inter-page delay, 3.4s uncached)
+TOP_DEALS_LIMIT = 8       # optimal golden number (2x4 desktop, 2x3 laptop, 4x2 mobile)
+MIN_DEAL_SCORE_FLOOR = 60.0  # minimum MDQS threshold for curated deal status
+BRAND_DIVERSITY_MAX_PER_BRAND = 2  # maximum deals per brand in a single query
+
+# Optional Semantic Reranker (Fail-open)
+OLLAMA_ENABLED = True
+OLLAMA_MODEL = "nomic-embed-text"
+OLLAMA_HOST = "http://localhost:11434"
 
 # Safety
 MAX_CONCURRENT_SCRAPES = 1  # max concurrent HTTP requests to Amazon
