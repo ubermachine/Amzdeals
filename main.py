@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -13,6 +15,8 @@ from cache.history import (
     list_snapshot_dates,
     get_snapshots_by_date,
     compare_snapshots,
+    has_snapshot_for_date,
+    get_snapshot_count_for_date,
 )
 from cache.sqlite_cache import SearchCache
 from scraper.engine import search_deals, search_category_deals
@@ -31,12 +35,50 @@ if not os.path.exists(index_path):
 _cache: SearchCache | None = None
 
 
+async def _run_startup_snapshot_check(cache: SearchCache) -> None:
+    """Non-blocking startup check: automatically records daily deal snapshot once per day."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        if has_snapshot_for_date(today):
+            count = get_snapshot_count_for_date(today)
+            logger.info("[DealTracker] Today's snapshot (%s) is already recorded (%d deals). Skipping.", today, count)
+            return
+
+        logger.info("[DealTracker] No snapshot found for today (%s). Initializing daily deal snapshot...", today)
+        count = dump_cache_to_snapshots(snapshot_date=today)
+        if count >= 20:
+            logger.info("[DealTracker] Successfully recorded %d deals for today (%s) from cache.", count, today)
+            return
+
+        logger.info("[DealTracker] Cache has limited items (%d). Sweeping top categories in background...", count)
+        top_categories = config.CATEGORIES[:6]
+        for cat in top_categories:
+            try:
+                res = await search_category_deals(
+                    node=cat["node"],
+                    category_name=cat["name"],
+                    cache=cache,
+                )
+                for p in res.get("products", []):
+                    from cache.history import record_deal_snapshot
+                    record_deal_snapshot(p, category=cat["name"], snapshot_date=today, node=cat["node"])
+            except Exception as e:
+                logger.warning("[DealTracker] Background sweep failed for category %s: %s", cat["name"], e)
+
+        total_now = get_snapshot_count_for_date(today)
+        logger.info("[DealTracker] Completed startup snapshot for %s: %d total unique deals recorded.", today, total_now)
+    except Exception as e:
+        logger.error("[DealTracker] Error during startup snapshot check: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     global _cache
     _cache = SearchCache()
     await _cache.init()
+    # Non-blocking background task: ensures snapshot is taken once for that day
+    asyncio.create_task(_run_startup_snapshot_check(_cache))
     yield
     # Shutdown
     if _cache:
