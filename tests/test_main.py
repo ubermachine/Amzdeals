@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import config
 from main import app
 
 # Use TestClient with context manager to trigger lifespan events (cache init/close)
@@ -50,6 +51,6 @@ def test_api_version_endpoint(client):
     response = client.get("/api/version")
     assert response.status_code == 200
     data = response.json()
-    assert data["version"] == "2.3.0"
-    assert data["release"] == "v2.3.0"
+    assert data["version"] == config.APP_VERSION
+    assert data["release"] == f"v{config.APP_VERSION}"
     assert data["status"] == "healthy"

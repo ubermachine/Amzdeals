@@ -72,9 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderProducts(visibleProducts, topDealsGrid, true, currentSortBy);
             if (topDealsCount) {
                 if (currentPriceMin > 0 || currentPriceMax < Infinity) {
-                    topDealsCount.textContent = `Showing ${visibleProducts.length} of ${currentLoadedProducts.length} Deals`;
+                    topDealsCount.textContent = `Showing ${visibleProducts.length} of ${currentLoadedProducts.length} Curated Deals`;
                 } else {
-                    topDealsCount.textContent = `Showing ${visibleProducts.length} Deals`;
+                    topDealsCount.textContent = `Showing Top ${visibleProducts.length} Curated Deals`;
                 }
                 topDealsCount.classList.remove('hidden');
             }
