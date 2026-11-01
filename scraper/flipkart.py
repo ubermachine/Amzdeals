@@ -37,6 +37,8 @@ SERIES_PATTERNS = [
     r"tuf gaming", r"tuf", r"rog strix", r"rog zephyrus", r"rog", r"zenbook", r"vivobook",
     r"aspire \d+", r"aspire one", r"aspire", r"swift \d+", r"swift go", r"swift",
     r"predator helios", r"predator", r"nitro \d+", r"nitro v", r"nitro",
+    r"macbook\s*(?:air|pro)?(?:\s*m[1-4])?", r"ipad\s*(?:air|pro|mini)?(?:\s*\d+(?:th)?\s*gen)?",
+    r"iphone\s*(?:1[1-7]|[6-9]|x[rs]?|se)\b(?:\s*(?:pro\s*max|pro|plus|mini))?",
     r"galaxy s\d+(?: ultra| plus|\+)?", r"galaxy z (?:fold|flip)\d*", r"galaxy a\d+", r"galaxy m\d+",
     r"nord ce\d*(?: lite)?", r"nord \d+",
     r"narzo\s*\d+[a-z]*", r"redmi note\s*\d+[a-z]*", r"redmi\s*\d+[a-z]*",
@@ -46,6 +48,9 @@ SERIES_PATTERNS = [
     r"airdopes \d+(?: pro| plus| max)?", r"rockerz \d+(?: pro| plus)?",
     r"wh-ch\d+[a-z]*", r"wf-c\d+[a-z]*", r"wh-\d+[a-z]*",
     r"chromebook \d+", r"chromebook",
+    r"smashic\b", r"court\s*ultra", r"air\s*force", r"stan\s*smith", r"superstar", r"suede\s*classic", r"flyer\s*runner",
+    r"colorfit\s*\w+", r"ninja\s*\w+", r"wave\s*\w+", r"lunar\s*\w+", r"storm\s*\w+",
+    r"deluxe\s*alpha", r"svachh\b", r"omega\s*select", r"platina\b",
     r"p3\s*plus", r"p3", r"p5\s*plus", r"p5", r"sn580", r"sn770", r"sn850x?", r"nv2", r"nv3",
     r"980\s*pro", r"990\s*pro", r"970\s*evo", r"870\s*evo", r"t7\s*shield", r"t7", r"t9",
     r"bravia\s*\d*", r"crystal\s*4k",
@@ -68,6 +73,8 @@ GENERIC_EXCLUDED_TOKENS = {
     "MICRO-EDGE", "FAST-CHARGE", "FAST-CHARGING", "DUAL-PAIRING", "DUAL-DEVICE",
     "DUAL-TONE", "TRULY-WIRELESS", "TOUCH-CONTROL", "NOISE-CANCELLING",
     "NOISE-ISOLATION", "NOISE-REDUCTION", "HI-RES", "BEE-RATED", "FHD", "WUXGA",
+    "UNISEX-ADULT", "LOW-TOP", "HIGH-TOP", "NON-STICK", "SMART-CHOICE", "THIN-LIGHT",
+    "MADE-IN-INDIA", "FOR-MEN", "FOR-WOMEN", "UNISEX", "ADULT", "CASUAL",
     "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "1000", "5000", "1200",
     "128", "256", "512", "1024", "2048", "1TB", "2TB",
     "128GB", "256GB", "512GB", "1024GB", "2048GB",
@@ -76,6 +83,20 @@ GENERIC_EXCLUDED_TOKENS = {
     "1080P", "1440P", "2160P", "144HZ", "120HZ", "165HZ", "240HZ", "60HZ",
     "40MM", "50MM", "10MM", "12MM", "13MM", "5G", "4G", "3G", "LTE",
 }
+
+UNIT_MEASUREMENT_SUFFIXES = (
+    "W", "V", "KG", "G", "L", "LTR", "GB", "TB", "MB", "HZ", "KHZ", "MHZ", "GHZ", "CM", "MM", "ML", "INCH", "RPM", "K"
+)
+
+
+def is_unit_measurement(token: str) -> bool:
+    """Check if token is a physical unit measurement rather than a model code (e.g. 20L, 16GB, 144HZ)."""
+    for u in UNIT_MEASUREMENT_SUFFIXES:
+        if token.endswith(u):
+            prefix = token[:-len(u)]
+            if prefix.isdigit() or re.match(r"^\d+(\.\d+)?$", prefix):
+                return True
+    return False
 
 
 def extract_audio_form_factor(title: str) -> str | None:
@@ -158,10 +179,17 @@ def extract_device_model_numbers(title: str) -> set[str]:
     res = set()
     for m in raw:
         m_up = m.upper().strip()
-        if m_up not in GENERIC_EXCLUDED_TOKENS and len(m_up) >= 3:
-            if not m_up.endswith("W") and not m_up.endswith("V") and not m_up.endswith("KG"):
-                if not extract_cpu_model(m_up):
-                    res.add(m_up)
+        if m_up in GENERIC_EXCLUDED_TOKENS or len(m_up) < 3:
+            continue
+        if is_unit_measurement(m_up):
+            continue
+        if "-" in m_up and not any(ch.isdigit() for ch in m_up):
+            continue
+        if re.match(r"^\d+(?:ST|ND|RD|TH)$", m_up):
+            continue
+        if extract_cpu_model(m_up):
+            continue
+        res.add(m_up)
     return res
 
 
@@ -381,11 +409,22 @@ def extract_product_signature(title: str) -> dict:
 
     for m in model_patterns:
         m_up = m.upper().strip()
-        if m_up not in GENERIC_EXCLUDED_TOKENS and m_up not in models:
+        if (
+            m_up not in GENERIC_EXCLUDED_TOKENS
+            and not is_unit_measurement(m_up)
+            and not ("-" in m_up and not any(ch.isdigit() for ch in m_up))
+            and not re.match(r"^\d+(?:ST|ND|RD|TH)$", m_up)
+            and m_up not in models
+        ):
             models.append(m_up)
             if "-" in m_up:
                 base = m_up.split("-")[0].strip()
-                if len(base) >= 3 and base not in GENERIC_EXCLUDED_TOKENS and base not in models:
+                if (
+                    len(base) >= 3
+                    and base not in GENERIC_EXCLUDED_TOKENS
+                    and not is_unit_measurement(base)
+                    and base not in models
+                ):
                     models.append(base)
 
     # 4. Spec Extraction (RAM, Storage, Volume)
@@ -425,7 +464,7 @@ def extract_product_signature(title: str) -> dict:
     seen_tokens = set()
     final_tokens = []
     for part in query_parts:
-        for t in part.split():
+        for t in part.replace("-", " ").split():
             clean_t = re.sub(r"[^\w]", "", t.lower())
             if clean_t and clean_t not in seen_tokens:
                 seen_tokens.add(clean_t)
@@ -914,11 +953,11 @@ async def verify_product_against_flipkart(
         await cache.set_flipkart(cache_key, fallback_unverified)
         return fallback_unverified
 
-    # 3. Score candidates with 5-layer disambiguation (brand + model/series match >= 70.0)
+    # 3. Score candidates with 5-layer disambiguation (brand + model/series/specs match >= 55.0)
     scored_candidates = []
     for c in candidates:
         score = score_flipkart_match(sig, amazon_price, c)
-        if score >= 70.0:
+        if score >= 55.0:
             scored_candidates.append((score, c))
 
     if not scored_candidates:
