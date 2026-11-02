@@ -130,9 +130,51 @@ def cmd_export_csv(args):
     print(f"\n[+] Exported {len(deals)} deals for '{date}' to '{filename}'.")
 
 
+def cmd_sweep(args):
+    date = args.date or datetime.now().strftime("%Y-%m-%d")
+    asyncio.run(async_sweep(date))
+    cmd_dates(args)
+
+
+async def async_sweep(date: str | None = None):
+    import config
+    from cache.sqlite_cache import SearchCache
+    from scraper.engine import search_category_deals
+
+    today = date or datetime.now().strftime("%Y-%m-%d")
+    cache = SearchCache()
+    await cache.init()
+    print(f"\n[+] Starting live sweep across all {len(config.CATEGORIES)} categories for date '{today}'...")
+    total_recorded = 0
+
+    for i, cat in enumerate(config.CATEGORIES, 1):
+        cname = cat["name"]
+        print(f"  [{i:02d}/{len(config.CATEGORIES)}] Fetching {cname} (node {cat['node']})...", end=" ", flush=True)
+        try:
+            res = await search_category_deals(
+                node=cat["node"],
+                category_name=cname,
+                min_discount=config.DEFAULT_MIN_DISCOUNT,
+                max_discount=config.DEFAULT_MAX_DISCOUNT,
+                cache=cache,
+            )
+            products = res.get("products", [])
+            for p in products:
+                record_deal_snapshot(p, category=cname, snapshot_date=today, node=cat["node"])
+            print(f"Done ({len(products)} deals)")
+            total_recorded += len(products)
+        except Exception as e:
+            print(f"Error: {e}")
+        await asyncio.sleep(0.5)
+
+    await cache.close()
+    print(f"\n[+] Live sweep complete: {total_recorded} deals recorded for '{today}'.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Deal Finder Daily Snapshot & Historical Comparison CLI")
     parser.add_argument("--dump", action="store_true", help="Dump all current cached deals to history database")
+    parser.add_argument("--sweep", action="store_true", help="Live sweep all 18 categories from Amazon and record deals")
     parser.add_argument("--dates", action="store_true", help="List all recorded snapshot dates")
     parser.add_argument("--compare", nargs="*", help="Compare two snapshot dates: --compare [DATE1] [DATE2]")
     parser.add_argument("--export-json", nargs="?", const="today", help="Export snapshot to JSON file: --export-json [DATE]")
@@ -143,6 +185,8 @@ def main():
 
     if args.dump:
         cmd_dump(args)
+    elif args.sweep:
+        cmd_sweep(args)
     elif args.dates:
         cmd_dates(args)
     elif args.compare is not None:

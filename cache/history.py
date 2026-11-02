@@ -196,6 +196,12 @@ def dump_cache_to_snapshots(
         rows = cursor.execute("SELECT data, created_at FROM search_cache").fetchall()
 
         for data_json, created_at in rows:
+            # Only dump cache entries created on the target snapshot date
+            if created_at:
+                entry_date = datetime.fromtimestamp(created_at).strftime("%Y-%m-%d")
+                if entry_date != today:
+                    continue
+
             try:
                 data = json.loads(data_json)
             except Exception:
