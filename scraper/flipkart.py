@@ -895,7 +895,7 @@ async def fetch_flipkart_candidates(query: str, session: requests.AsyncSession) 
     headers["Sec-Fetch-Site"] = "same-origin"
 
     try:
-        resp = await session.get(url, headers=headers, timeout=3.5)
+        resp = await session.get(url, headers=headers, timeout=12)
         if resp.status_code == 200:
             return parse_flipkart_html(resp.text)
         else:
