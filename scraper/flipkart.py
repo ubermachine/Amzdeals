@@ -11,6 +11,8 @@ import re
 import urllib.parse
 from bs4 import BeautifulSoup
 from curl_cffi import requests
+import numpy as np
+import ollama
 
 import config
 from cache.sqlite_cache import SearchCache, make_flipkart_cache_key
@@ -903,8 +905,160 @@ async def fetch_flipkart_candidates(query: str, session: requests.AsyncSession) 
         logger.warning("Error querying Flipkart for %s: %s", query, e)
         return []
 
+def cosine_similarity(vec1, vec2):
+
+    a = np.array(vec1)
+    b = np.array(vec2)
+
+    return float(
+        np.dot(a, b)
+        /
+        (
+            np.linalg.norm(a)
+            * np.linalg.norm(b)
+        )
+    )
+
+def create_amazon_embedding(amazon_product: dict):
+    
+    product_text = f""" 
+            Name {amazon_product['title']} ,
+            Current Price {amazon_product['current_price']} ,
+            Original Price {amazon_product['original_price']} ,
+            Rating {amazon_product['rating']},
+            Product url {amazon_product['product_url']}
+        """
+    response = ollama.embed(model="nomic-embed-text", input=product_text)
+    return response["embeddings"][0]
+
+def create_flipkart_embedding(flipkart_product: dict):
+    
+    product_text = f""" 
+            Name {flipkart_product['title']} ,
+            Current Price {flipkart_product['price']} ,
+            Original Price {flipkart_product['mrp']} ,
+            Rating {flipkart_product['rating']},
+            Product url {flipkart_product['url']}
+        """
+    return product_text
+
 
 async def verify_product_against_flipkart(
+    amazon_product: dict,
+    session: requests.AsyncSession,
+    cache: SearchCache,
+) -> dict:
+    """Verify an Amazon product against Flipkart using entity disambiguation & +/-5% parity."""
+    amazon_embedding = create_amazon_embedding(amazon_product)
+
+    asin = amazon_product.get("asin")
+    title = amazon_product.get("title", "")
+    amazon_price = (
+            amazon_product.get("effective_price")
+            or amazon_product.get("current_price")
+            or amazon_product.get("price")
+        )
+
+    fallback_unverified = {
+        "match_found": False,
+        "verdict": "unverified",
+        "is_deal": False,
+        "flipkart_price": None,
+        "flipkart_title": None,
+        "flipkart_url": None,
+        "match_confidence": 0.0,
+        "price_diff": 0.0,
+        "diff_pct": 0.0,
+    }
+
+    if not asin or not title or not amazon_price:
+        return fallback_unverified
+
+    cache_key = make_flipkart_cache_key(asin, title)
+
+    # 1. Check persistent SQLite cache
+    cached = await cache.get_flipkart(cache_key)
+    if cached is not None:
+        return cached
+
+    # 2. Extract signature & query Flipkart
+    sig = extract_product_signature(title)
+    if not sig.get("brand") and not sig.get("series") and not sig.get("models"):
+        # Generic white-label item with no brand or model -> skip external network request
+        await cache.set_flipkart(cache_key, fallback_unverified)
+        return fallback_unverified
+
+    candidates = await fetch_flipkart_candidates(sig["search_query"], session)
+
+    if not candidates:
+        await cache.set_flipkart(cache_key, fallback_unverified)
+        return fallback_unverified
+
+    resp = ollama.embed(
+    model="nomic-embed-text",
+    input=[
+        create_flipkart_embedding(c)
+        for c in candidates
+      ]
+    )
+    
+    candidate_embeddings = resp["embeddings"]
+
+    # 3. Score candidates with 5-layer disambiguation (brand + model/series/specs match >= 55.0)
+    scored_candidates = []
+    for candidate, embedding in zip(
+        candidates,
+        candidate_embeddings
+    ):
+        score = score_flipkart_match(sig, amazon_price, candidate)
+        if score <= 0:
+            continue
+        
+        semantic_similarity = cosine_similarity(
+        amazon_embedding,
+        embedding
+    )
+
+        combined_score = (semantic_similarity * 100 * 0.70 + score * 0.30)
+        scored_candidates.append({
+        "candidate": candidate,
+        "combined_score": combined_score,
+        "rule_score": score,
+        "semantic_similarity": semantic_similarity
+    })
+
+    if not scored_candidates:
+        await cache.set_flipkart(cache_key, fallback_unverified)
+        return fallback_unverified
+
+    scored_candidates.sort(key=lambda x: x["combined_score"], reverse=True)
+    best = scored_candidates[0]
+    
+    best_match = best["candidate"]
+    best_score = best["combined_score"]
+    semantic_similarity = best["semantic_similarity"]
+
+    # 4. Classify cross-market verdict
+    verdict_info = classify_cross_market_verdict(amazon_price, best_match["price"])
+
+    result = {
+        "match_found": True,
+        "verdict": verdict_info["verdict"],
+        "is_deal": verdict_info["is_deal"],
+        "flipkart_price": best_match["price"],
+        "flipkart_title": best_match["title"],
+        "flipkart_url": best_match.get("url"),
+        "match_confidence": round(best_score, 1),
+        "price_diff": verdict_info.get("price_diff", 0.0),
+        "flipkart_savings": verdict_info.get("flipkart_savings", abs(verdict_info.get("price_diff", 0.0))),
+        "diff_pct": verdict_info.get("diff_pct", 0.0),
+    }
+
+    # 5. Persist to cache
+    await cache.set_flipkart(cache_key, result)
+    return result
+
+async def verify_product_against_flipkart_1(
     amazon_product: dict,
     session: requests.AsyncSession,
     cache: SearchCache,

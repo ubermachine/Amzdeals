@@ -169,7 +169,7 @@ def calculate_score(product, score):
 
     rating = product.get("rating") or 0
     review_count = product.get("review_count") or 0
-    discount_pct = product.get("discount_pct") or 0
+    discount_pct = product.get("effective_discount_pct") or 0
 
     rating_score = (
         rating *
@@ -399,7 +399,11 @@ def parse_search_results(html: str, query: str) -> list[dict]:
             Product url {p['product_url']},
             Is prime {p['is_prime']},
             Coupon {p['coupon']},
-            Badge {p['badge']}"""
+            Badge {p['badge']},
+            Coupon Discount: {p['coupon_discount']},
+            Effective Price: {p['effective_price']},
+            Effective Discount Percent: {p['effective_discount_pct']}
+        """
         for p in products
     ]
     
