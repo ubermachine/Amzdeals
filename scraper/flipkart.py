@@ -949,8 +949,6 @@ async def verify_product_against_flipkart(
     cache: SearchCache,
 ) -> dict:
     """Verify an Amazon product against Flipkart using entity disambiguation & +/-5% parity."""
-    amazon_embedding = create_amazon_embedding(amazon_product)
-
     asin = amazon_product.get("asin")
     title = amazon_product.get("title", "")
     amazon_price = (
@@ -994,6 +992,8 @@ async def verify_product_against_flipkart(
         await cache.set_flipkart(cache_key, fallback_unverified)
         return fallback_unverified
 
+    amazon_embedding = create_amazon_embedding(amazon_product)
+    
     resp = ollama.embed(
     model="nomic-embed-text",
     input=[
