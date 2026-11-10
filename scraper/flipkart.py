@@ -1011,7 +1011,7 @@ async def verify_product_against_flipkart(
         candidate_embeddings
     ):
         score = score_flipkart_match(sig, amazon_price, candidate)
-        if score <= 0:
+        if score < 55.0:
             continue
         
         semantic_similarity = cosine_similarity(
@@ -1019,10 +1019,8 @@ async def verify_product_against_flipkart(
         embedding
     )
 
-        combined_score = (semantic_similarity * 100 * 0.70 + score * 0.30)
         scored_candidates.append({
         "candidate": candidate,
-        "combined_score": combined_score,
         "rule_score": score,
         "semantic_similarity": semantic_similarity
     })
@@ -1031,11 +1029,17 @@ async def verify_product_against_flipkart(
         await cache.set_flipkart(cache_key, fallback_unverified)
         return fallback_unverified
 
-    scored_candidates.sort(key=lambda x: x["combined_score"], reverse=True)
+    scored_candidates.sort(
+        key=lambda x: (
+            x["rule_score"],
+            x["semantic_similarity"]
+        ),
+        reverse=True
+    )
     best = scored_candidates[0]
     
     best_match = best["candidate"]
-    best_score = best["combined_score"]
+    best_score = best["rule_score"]
     semantic_similarity = best["semantic_similarity"]
 
     # 4. Classify cross-market verdict
