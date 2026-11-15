@@ -8,7 +8,7 @@ export default function Header() {
   return (
     <div className="row header d-flex align-items-center">
         <div className="col-sm-2 d-flex align-items-center">
-            <span className="ms-4"><RiPriceTag3Line className="bg-pricetag"/></span>
+            <span className="ms-5"><RiPriceTag3Line className="bg-pricetag"/></span>
             <h3 className="header-title">dealwise</h3>
         </div>
         <div className="col-sm-6 d-flex justify-content-center">
