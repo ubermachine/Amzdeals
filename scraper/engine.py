@@ -21,6 +21,7 @@ from curl_cffi import requests
 
 import config
 from cache.sqlite_cache import SearchCache, make_cache_key, make_category_cache_key
+from dto.QuerySearchDto import QuerySearchDto
 from scraper.flipkart import verify_product_against_flipkart
 from scraper.parser import parse_search_results, is_accessory_title
 from scraper.stealth import get_stealth_headers
@@ -84,6 +85,10 @@ DISCOUNT_TIERS = [
     (10, "2665399031"),   # 10% Off or more
 ]
 
+RATING_TIERS = [
+    (3,"1318475031"),
+    (4,"1318475031")
+]
 
 def get_discount_tier_node(min_discount: int) -> str | None:
     """Return the Amazon.in taxonomical discount refinement node for min_discount.
@@ -97,16 +102,24 @@ def get_discount_tier_node(min_discount: int) -> str | None:
             return node_id
     return None
 
+def get_rating_tier_node(min_rating: int) -> str | None:
+    """Return the Amazon.in taxonomical discount refinement node for min_discount.
+
+    Maps min_discount down to the highest tier threshold <= min_discount.
+    For example, 40% maps to the 35% tier ('2665402031').
+    Returns None if min_discount < 10.
+    """
+    for threshold, node_id in RATING_TIERS:
+        if min_rating >= threshold:
+            return node_id
+    return None
+
 
 # ─── URL builders ────────────────────────────────────────────────────
 
 
 def build_search_url(
-    query: str,
-    min_discount: int,
-    max_discount: int,
-    page: int,
-    sort_by: str = "bestsellers",
+    query_search: QuerySearchDto,
 ) -> str:
     """Construct an Amazon.in search URL with taxonomical discount filters.
 
@@ -128,17 +141,18 @@ def build_search_url(
         "price_asc": "price-asc-rank",
         "price_desc": "price-desc-rank",
     }
-    amazon_sort = amazon_sort_map.get(sort_by, "exact-aware-popularity-rank")
+    amazon_sort = amazon_sort_map.get(query_search.sort_by, "exact-aware-popularity-rank")
 
     params = {
-        "k": query,
+        "k": query_search.query,
         "s": amazon_sort,
-        "page": page,
+        "page": query_search.page,
     }
 
-    tier_node = get_discount_tier_node(min_discount)
+    tier_node = get_discount_tier_node(query_search.min_discount)
+    rating_node = get_rating_tier_node(query_search.min_rating)
     if tier_node:
-        params["rh"] = f"p_n_pct-off-with-tax:{tier_node}"
+        params["rh"] = f"p_36:{query_search.min_price}00-{query_search.max_price}00,p_n_pct-off-with-tax:{tier_node},p_72:{rating_node}"
 
     return f"{config.AMAZON_BASE_URL}?{urlencode(params)}"
 
@@ -808,27 +822,19 @@ async def _fetch_with_retry(url: str) -> str | None:
 
 
 async def search_deals(
-    query: str,
-    min_discount: int,
-    max_discount: int,
-    page: int,
-    cache: SearchCache,
-    sort_by: str = "bestsellers",
+    query_search: QuerySearchDto,
+    cache: SearchCache
 ) -> dict:
     """Search for deals on Amazon.in with caching.
 
     Args:
-        query: Search term.
-        min_discount: Minimum discount percentage.
-        max_discount: Maximum discount percentage.
-        page: Page number.
+        query_search: DTO containing all the relevant information for searching
         cache: SearchCache instance.
-        sort_by: Sort mode ('bestsellers', 'popularity', 'reviews', 'featured').
 
     Returns:
         Dict with keys: query, page, products, total_results, cached.
     """
-    cache_key = make_cache_key(query, min_discount, max_discount, page, sort_by=sort_by)
+    cache_key = make_cache_key(query_search)
 
     # Check cache first
     cached = await cache.get(cache_key)
@@ -844,13 +850,13 @@ async def search_deals(
     await asyncio.sleep(delay)
 
     # Fetch from Amazon
-    url = build_search_url(query, min_discount, max_discount, page, sort_by=sort_by)
+    url = build_search_url(query_search)
     html = await _fetch_with_retry(url)
 
     if html is None:
         return {
-            "query": query,
-            "page": page,
+            "query": query_search.query,
+            "page": query_search.page,
             "products": [],
             "total_results": 0,
             "cached": False,
@@ -858,7 +864,7 @@ async def search_deals(
         }
 
     # Parse
-    products = parse_search_results(html, query)
+    products = parse_search_results(html, query_search.query)
 
     for p in products:
         d = p.get("effective_discount_pct") or p.get("discount_pct") or 0

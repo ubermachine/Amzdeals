@@ -21,6 +21,7 @@ from cache.history import (
     is_daily_snapshot_complete,
 )
 from cache.sqlite_cache import SearchCache
+from dto.QuerySearchDto import QuerySearchDto
 from scraper.engine import search_deals, search_category_deals
 
 logger = logging.getLogger(__name__)
@@ -155,14 +156,10 @@ async def fetch_keepa_graph(asin: str, range_days: int = 365) -> bytes | None:
 
 @app.get("/api/search")
 async def api_search(
-    query: str = Query(..., min_length=1, description="Search term (e.g., Perfume)"),
-    min_discount: int = Query(10, ge=0, le=99, description="Minimum discount %"),
-    max_discount: int = Query(99, ge=1, le=100, description="Maximum discount %"),
-    page: int = Query(1, ge=1, le=100, description="Page number"),
-    sort_by: str = Query("bestsellers", description="Sort order: bestsellers, popularity, reviews, featured"),
+    querySearch: QuerySearchDto
 ):
     """Search for deals on Amazon.in."""
-    if min_discount > max_discount:
+    if querySearch.min_discount > querySearch.max_discount:
         raise HTTPException(status_code=400, detail="min_discount cannot be greater than max_discount")
 
     global _cache
@@ -171,12 +168,8 @@ async def api_search(
         await _cache.init()
         
     result = await search_deals(
-        query=query,
-        min_discount=min_discount,
-        max_discount=max_discount,
-        page=page,
+        query_search=querySearch,
         cache=_cache,
-        sort_by=sort_by,
     )
     return result
 

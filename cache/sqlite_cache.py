@@ -10,15 +10,16 @@ from typing import Any
 import aiosqlite
 
 import config
+from dto.QuerySearchDto import QuerySearchDto
 
 logger = logging.getLogger(__name__)
 
 
 def make_cache_key(
-    query: str, min_discount: int, max_discount: int, page: int, sort_by: str = "bestsellers"
+    query_search: QuerySearchDto
 ) -> str:
     """Generate a deterministic SHA256 cache key from search parameters."""
-    raw = f"{query.lower().strip()}:{min_discount}:{max_discount}:{page}:{sort_by}"
+    raw = f"{query_search.query.lower().strip()}:{query_search.min_discount}:{query_search.max_discount}:{query_search.page}:{query_search.category}:{query_search.min_price}:{query_search.max_price}:{query_search.min_rating}:{query_search.max_rating}:{query_search.sort_by}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

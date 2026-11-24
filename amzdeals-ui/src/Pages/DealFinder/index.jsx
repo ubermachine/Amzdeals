@@ -19,6 +19,8 @@ import ButtonGroup from '@mui/material/ButtonGroup';
 import { FiGrid } from "react-icons/fi";
 import { IoIosList } from "react-icons/io";
 import Pagination from '@mui/material/Pagination';
+import Rating from '@mui/material/Rating';
+import { useEffect } from "react";
 
 export default function DealFinder() {
 
@@ -85,7 +87,61 @@ export default function DealFinder() {
     },
   });
 
-  const [value, setValue] = React.useState([0, 50000]);
+  const [value, setValue] = React.useState([0, 100000]);
+  const [discount, setDiscount] = React.useState("any");
+  const [rating, setRating] = React.useState({
+    four: true,
+    three: false
+  });
+
+  const [keyword, setKeyword] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [data, setData] = React.useState(null);
+
+  const { four, three } = rating;
+  
+
+  const handlePageChange = (event, value) => {
+    setPage(value);
+  };
+
+
+  const handleRatingsChange = (event) => {
+    setRating({
+      ...rating,
+      [event.target.name]: event.target.checked,
+    });
+  };
+
+  const handleDiscountChange = (event) => {
+    setDiscount(event.target.value);
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const params = new URLSearchParams({
+        query: keyword,
+        min_discount: 10,
+        page: page,
+        min_price: value[0],
+        max_price: value[1],
+        min_rating: three ? 3 : 4
+      });
+
+      fetch(`https://localhost:8000/api/search?${params}`, {
+        method: 'GET'
+      })
+        .then(response => response.json())
+        .then(json => setData(json))
+        .catch(error => console.error(error));
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    }
+  };
+
+  useEffect(() => {
+      fetchProducts();
+  }, [value, discount, rating]);
 
   return (
     <>
@@ -98,8 +154,8 @@ export default function DealFinder() {
           <div className="col-sm-8 px-0">
             <form>
               <IoIosSearch />
-              <input className="pd-20" type="text" placeholder="Search products, brands or stores" />
-              <Button>Search deals</Button>
+              <input className="pd-20" type="text" placeholder="Search products, brands or stores" onChange={(e) => setKeyword(e.target.value)} />
+              <Button onClick={() => fetchProducts()}>Search deals</Button>
             </form>
           </div>
           <div className="col-sm-3 ms-2">
@@ -113,17 +169,6 @@ export default function DealFinder() {
             <span className="filter-title">Filters</span>
             <Button className="float-end reset-btn" variant="outlined">Reset all</Button>
             <hr style={{ opacity: 0.1 }} />
-            <div className="filter-categories">
-              <span className="cat-title">Category</span>
-              <RadioGroup sx={{ '& .MuiSvgIcon-root': { fontSize: 14 } }} className="mt-2">
-                <FormControlLabel value="female" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Female" />
-                <FormControlLabel value="male" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Male" />
-                <FormControlLabel value="other" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Other" />
-                <FormControlLabel value="other1" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Other" />
-                <FormControlLabel value="other2" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Other" />
-              </RadioGroup>
-            </div>
-            <hr style={{ opacity: 0.1 }} />
             <div className="filter-price mt-2">
               <span className="cat-title">Price Range</span>
               <div className="d-flex justify-content-center mt-2">
@@ -133,8 +178,8 @@ export default function DealFinder() {
               </div>
               <RangeSlider
                 min={0}
-                max={50000}
-                step={100}
+                max={100000}
+                step={1000}
                 value={value}
                 onInput={setValue}
                 className="mt-3"
@@ -143,8 +188,8 @@ export default function DealFinder() {
             <hr style={{ opacity: 0.1 }} />
             <div className="filter-discounts mt-3">
               <span className="cat-title">Discount</span>
-              <RadioGroup sx={{ '& .MuiSvgIcon-root': { fontSize: 14 } }} className="mt-2">
-                <FormControlLabel value="Any Discount" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Any Discount" />
+              <RadioGroup value={discount} onChange={handleDiscountChange} sx={{ '& .MuiSvgIcon-root': { fontSize: 14 } }} className="mt-2">
+                <FormControlLabel value="any" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="Any Discount" />
                 <FormControlLabel value="10-25" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="10% or more" />
                 <FormControlLabel value="25-50" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="25% or more" />
                 <FormControlLabel value="50+" control={<Radio icon={<BpIcon />} checkedIcon={<BpCheckedIcon />} />} label="50% or more" />
@@ -157,12 +202,12 @@ export default function DealFinder() {
                 <FormControl component="fieldset">
                   <FormGroup>
                     <FormControlLabel
-                      control={<Checkbox name="gilad" size='small' color="success" />}
-                      label="Gilad Gray"
+                      control={<Checkbox name="four" size='small' checked={four} onChange={handleRatingsChange} color="success" />}
+                      label="4 stars and above"
                     />
                     <FormControlLabel
-                      control={<Checkbox name="jason" size='small' color="success" />}
-                      label="Jason Killian"
+                      control={<Checkbox name="three" size='small' checked={three} onChange={handleRatingsChange} color="success" />}
+                      label="3 stars and above"
                     />
                   </FormGroup>
                 </FormControl>
@@ -187,9 +232,18 @@ export default function DealFinder() {
               <div className="card col-sm-4">
                 <img src="..." class="card-img-top" alt="..." />
                 <div className="card-body">
-                  <h5 className="card-title">Card title</h5>
-                  <p className="card-text">Some quick example text</p>
-                  <Button className="btn btn-primary">Go somewhere</Button>
+                  <h5 className="card-title fs-17">Card title</h5>
+                  <div className='d-flex mt-3'>
+                    <Rating defaultValue={1} max={1} size='small' /><span className='rating-text ms-2'>4.8 (2.4k)</span>
+                  </div>
+                  <div className='d-flex mt-3'>
+                    <h5>₹399</h5>
+                    <span className='ms-4' style={{ color: "#6b7770" }}><s>₹499</s></span>
+                  </div>
+                  <div>
+                    <span class="disc-text">Save ₹100</span>
+                  </div>
+                  <Button className="mt-3 w-100 goto-store">Go to Amazon</Button>
                 </div>
               </div>
               <div className="card col-sm-4">
@@ -282,7 +336,7 @@ export default function DealFinder() {
               </div>
             </div>
             <span className="result-text float-start">Showing results 1-12 of 128 deals</span>
-            <Pagination count={10} variant="outlined" shape="rounded" className="float-end mt-3 page-buttons" color='primary'/>
+            <Pagination count={10} variant="outlined" shape="rounded" className="float-end mt-3 page-buttons" color='primary' onChange={handlePageChange} />
           </div>
         </div>
       </div>

@@ -241,3 +241,27 @@ code {
   color: #6b7770;
   margin-top: 20px !important;
 }
+
+.card-title.fs-17{
+  font-size: 17px !important;
+}
+
+.rating-text{
+  font-size: 11px;
+  color: #6b7770;
+}
+
+.disc-text{
+  color: #237a50;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.goto-store{
+  text-transform: capitalize !important;
+  background-color: #ffffff !important;
+  color: #237a50 !important;
+  border: 1px solid #237a50 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
